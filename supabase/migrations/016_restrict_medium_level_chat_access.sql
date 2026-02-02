@@ -1,0 +1,8 @@
+-- ============================================================
+-- Note: This migration is not needed - RLS should allow medium level parents
+-- to access chats/messages so they can access when flagged.
+-- Frontend enforces the restriction by checking for flagged messages.
+-- ============================================================
+-- The frontend check in chats/[id]/page.tsx ensures medium level parents
+-- can only access chats that have flagged messages.
+-- ============================================================
