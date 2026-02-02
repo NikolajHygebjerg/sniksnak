@@ -105,10 +105,12 @@ CREATE POLICY "Children can view members of their groups"
   );
 
 -- Group admins can add members
+-- Also allow group creator to add themselves as admin (for initial group creation)
 CREATE POLICY "Group admins can add members"
   ON public.group_members FOR INSERT
   TO authenticated
   WITH CHECK (
+    -- If user is already an admin of the group
     EXISTS (
       SELECT 1
       FROM public.group_members gm
@@ -117,14 +119,16 @@ CREATE POLICY "Group admins can add members"
         AND gm.role = 'admin'
     )
     OR
-    -- Or if the group creator is adding themselves as admin
-    EXISTS (
-      SELECT 1
-      FROM public.groups g
-      WHERE g.id = group_members.group_id
-        AND g.created_by = auth.uid()
-        AND group_members.user_id = auth.uid()
-        AND group_members.role = 'admin'
+    -- Or if the group creator is adding themselves as admin (for initial creation)
+    (
+      EXISTS (
+        SELECT 1
+        FROM public.groups g
+        WHERE g.id = group_members.group_id
+          AND g.created_by = auth.uid()
+      )
+      AND group_members.user_id = auth.uid()
+      AND group_members.role = 'admin'
     )
   );
 

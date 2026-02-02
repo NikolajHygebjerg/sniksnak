@@ -89,8 +89,8 @@ export default function GroupDetailPage() {
           return;
         }
 
-        // Get groups list to find this group
-        const groupsRes = await fetch("/api/groups/list", {
+        // Get group directly by ID
+        const groupRes = await fetch(`/api/groups/${groupId}`, {
           headers: {
             Authorization: `Bearer ${sessionForApi.access_token}`,
           },
@@ -98,15 +98,15 @@ export default function GroupDetailPage() {
 
         if (cancelled) return;
 
-        if (!groupsRes.ok) {
-          const errorData = await groupsRes.json().catch(() => ({}));
+        if (!groupRes.ok) {
+          const errorData = await groupRes.json().catch(() => ({}));
           setError(errorData.error || "Failed to load group");
           setLoading(false);
           return;
         }
 
-        const groupsData = await groupsRes.json();
-        const foundGroup = groupsData.groups?.find((g: Group) => g.id === groupId);
+        const groupData = await groupRes.json();
+        const foundGroup = groupData.group as Group;
 
         if (!foundGroup) {
           setError("Group not found or you don't have access");
@@ -254,52 +254,53 @@ export default function GroupDetailPage() {
     }
   }
 
+  async function handleAcceptInvitation(invitationId: string) {
+    if (!user || acceptingInvitationId) return;
+
+    setAcceptingInvitationId(invitationId);
+    setError(null);
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        setError("No session token");
+        setAcceptingInvitationId(null);
+        return;
+      }
+
+      const res = await fetch("/api/groups/accept-invitation", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ invitationId }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.error || "Failed to accept invitation");
+        setAcceptingInvitationId(null);
+        return;
+      }
+
+      // Refresh page
+      router.refresh();
+      setAcceptingInvitationId(null);
+    } catch (err) {
+      console.error("Error accepting invitation:", err);
+      setError(err instanceof Error ? err.message : "An error occurred");
+      setAcceptingInvitationId(null);
+    }
+  }
+
   function displayName(u: { first_name?: string | null; surname?: string | null; username?: string | null }): string {
     if (u.first_name && u.surname) {
       return `${u.first_name.trim()} ${u.surname.trim()}`;
     }
     return u.username?.trim() || "Unknown";
   }
-  const [chatId, setChatId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  async function handleOpenChat() {
-    setLoading(true);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) {
-        return;
-      }
-
-      const res = await fetch("/api/groups/get-or-create-chat", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({ groupId }),
-      });
-
-      const data = await res.json();
-      if (res.ok && data.chatId) {
-        window.location.href = `/groups/${groupId}/chat`;
-      }
-    } catch (err) {
-      console.error("Error opening chat:", err);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  return (
-    <button
-      onClick={handleOpenChat}
-      disabled={loading}
-      className="block w-full rounded-xl border border-blue-300 bg-blue-600 px-4 py-3 text-center text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition min-h-[44px] disabled:opacity-50"
-    >
-      {loading ? "Åbner…" : "Åbn gruppe chat"}
-    </button>
-  );
 
   if (loading) {
     return (
@@ -395,7 +396,7 @@ export default function GroupDetailPage() {
 
         {/* Open chat button */}
         <div className="mb-6">
-          <GroupChatButton groupId={groupId} />
+          <GroupChatButton groupId={groupId!} />
         </div>
 
         {/* Members section */}
@@ -532,10 +533,10 @@ export default function GroupDetailPage() {
 }
 
 function GroupChatButton({ groupId }: { groupId: string }) {
-  const [loading, setLoading] = useState(false);
+  const [chatLoading, setChatLoading] = useState(false);
 
   async function handleOpenChat() {
-    setLoading(true);
+    setChatLoading(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) {
@@ -558,17 +559,17 @@ function GroupChatButton({ groupId }: { groupId: string }) {
     } catch (err) {
       console.error("Error opening chat:", err);
     } finally {
-      setLoading(false);
+      setChatLoading(false);
     }
   }
 
   return (
     <button
       onClick={handleOpenChat}
-      disabled={loading}
+      disabled={chatLoading}
       className="block w-full rounded-xl border border-blue-300 bg-blue-600 px-4 py-3 text-center text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition min-h-[44px] disabled:opacity-50"
     >
-      {loading ? "Åbner…" : "Åbn gruppe chat"}
+      {chatLoading ? "Åbner…" : "Åbn gruppe chat"}
     </button>
   );
 }

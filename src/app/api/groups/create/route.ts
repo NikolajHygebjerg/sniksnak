@@ -149,20 +149,56 @@ export async function POST(request: NextRequest) {
   }
 
   // Add creator as admin member
-  const { error: memberErr } = await admin
+  // Use service role to bypass RLS
+  const { data: memberData, error: memberErr } = await admin
     .from("group_members")
     .insert({
       group_id: group.id,
       user_id: user.id,
       role: "admin",
-    });
+    })
+    .select("id, role, joined_at")
+    .maybeSingle();
 
-  if (memberErr) {
-    console.error("Error adding creator as member:", memberErr);
+  if (memberErr || !memberData) {
+    console.error("Error adding creator as member:", {
+      error: memberErr,
+      code: memberErr?.code,
+      message: memberErr?.message,
+      details: memberErr?.details,
+      hint: memberErr?.hint,
+      groupId: group.id,
+      userId: user.id,
+    });
+    
+    // Check if table doesn't exist
+    if (memberErr?.code === "42P01" || memberErr?.message?.includes("does not exist")) {
+      await admin.from("groups").delete().eq("id", group.id);
+      return NextResponse.json({ 
+        error: "Groups feature not initialized. Please run migration 021_create_groups.sql" 
+      }, { status: 500 });
+    }
+    
     // Try to delete the group if member insertion fails
     await admin.from("groups").delete().eq("id", group.id);
-    return NextResponse.json({ error: "Failed to add creator to group" }, { status: 500 });
+    return NextResponse.json({ 
+      error: "Failed to add creator to group",
+      details: memberErr?.message || "Unknown error"
+    }, { status: 500 });
   }
+  
+  console.log("Successfully added creator as admin member:", {
+    groupId: group.id,
+    userId: user.id,
+    memberId: memberData.id,
+  });
 
-  return NextResponse.json({ ok: true, group: groupWithAvatar || group });
+  // Return group with membership info
+  const groupWithMembership = {
+    ...(groupWithAvatar || group),
+    role: memberData.role,
+    joined_at: memberData.joined_at,
+  };
+
+  return NextResponse.json({ ok: true, group: groupWithMembership });
 }
