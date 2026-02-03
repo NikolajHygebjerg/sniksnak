@@ -79,6 +79,8 @@ export default function NewChatPage() {
   }, [otherUsers, searchQuery]);
 
   useEffect(() => {
+    let cancelled = false;
+    
     async function load() {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.user) {
@@ -105,33 +107,49 @@ export default function NewChatPage() {
         .from("parent_child_links")
         .select("child_id");
       
+      if (cancelled) return;
+      
       if (linksErr) {
         console.error("Error loading parent_child_links:", linksErr);
-        setError(linksErr.message);
-        setLoading(false);
+        if (!cancelled) {
+          setError(linksErr.message);
+          setLoading(false);
+        }
         return;
       }
+      
+      if (cancelled) return;
       
       const activeChildIds = new Set((linksData ?? []).map((l: { child_id: string }) => l.child_id));
       
       if (activeChildIds.size === 0) {
-        setOtherUsers([]);
-        setHasOtherChildren(false);
-        setLoading(false);
+        if (!cancelled) {
+          setOtherUsers([]);
+          setHasOtherChildren(false);
+          setLoading(false);
+        }
         return;
       }
 
       // Only load children who have an active parent link (exclude current user)
       const childIdsArray = Array.from(activeChildIds).filter((id) => id !== uid);
       
+      if (cancelled) return;
+      
       if (childIdsArray.length === 0) {
-        setOtherUsers([]);
-        setHasOtherChildren(false);
-        setLoading(false);
+        if (!cancelled) {
+          setOtherUsers([]);
+          setHasOtherChildren(false);
+          setLoading(false);
+        }
         return;
       }
       
-      setHasOtherChildren(true);
+      if (!cancelled) {
+        setHasOtherChildren(true);
+      }
+
+      if (cancelled) return;
 
       // Query users table: filter by is_child = true and active parent links
       // Try with is_child column first, fall back to username check if column doesn't exist
@@ -200,12 +218,16 @@ export default function NewChatPage() {
         }
       }
       
+      if (cancelled) return;
+      
       const { data: usersData, error: usersErr } = usersRes;
 
       if (usersErr) {
         console.error("Error loading users:", usersErr);
-        setError(usersErr.message);
-        setHasOtherChildren(false);
+        if (!cancelled) {
+          setError(usersErr.message);
+          setHasOtherChildren(false);
+        }
       } else {
         // Filter to ensure we only have children (double-check with is_child if available)
         // IMPORTANT: Only show children that have an active parent link AND are in the childIdsArray
@@ -215,6 +237,8 @@ export default function NewChatPage() {
           avatar_url: u.avatar_url ?? null,
         })) as UserRow[];
         
+        if (cancelled) return;
+        
         const childrenOnly = usersWithAvatar.filter((u: UserRow) => {
           // Must be in the childIdsArray (has active parent link)
           const hasActiveLink = childIdsArray.includes(u.id);
@@ -222,8 +246,11 @@ export default function NewChatPage() {
           const hasUsername = u.username != null && String(u.username).trim() !== "";
           return hasActiveLink && hasUsername; // Both conditions must be true
         });
-        setOtherUsers(childrenOnly);
-        setHasOtherChildren(childrenOnly.length > 0);
+        
+        if (!cancelled) {
+          setOtherUsers(childrenOnly);
+          setHasOtherChildren(childrenOnly.length > 0);
+        }
       }
 
       // Load sent pending requests if user is a child
@@ -281,9 +308,15 @@ export default function NewChatPage() {
         console.log("[Find friends] User is not a child, skipping sent requests load");
       }
 
-      setLoading(false);
+      if (!cancelled) {
+        setLoading(false);
+      }
     }
     load();
+    
+    return () => {
+      cancelled = true;
+    };
   }, [router]);
 
   async function handleWithdrawRequest(requestId: number) {
