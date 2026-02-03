@@ -2,13 +2,13 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Chat App",
-  description: "Minimal one-to-one chat",
+  title: "Sniksnak Chat",
+  description: "Chatapp med forældrekontrol",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "Chat App",
+    title: "Sniksnak Chat",
   },
   formatDetection: {
     telephone: false,
