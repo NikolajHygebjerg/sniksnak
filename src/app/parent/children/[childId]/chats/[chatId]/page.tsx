@@ -20,6 +20,7 @@ type Chat = {
 type UserRow = {
   id: string;
   email: string;
+  username?: string | null;
 };
 
 type Message = {

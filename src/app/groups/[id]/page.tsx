@@ -139,7 +139,12 @@ export default function GroupDetailPage() {
         if (membersErr) {
           console.error("Error loading members:", membersErr);
         } else {
-          setMembers((membersData || []) as GroupMember[]);
+          // Supabase returns nested relations as arrays, convert to single object
+          const processedMembers = (membersData || []).map((m: any) => ({
+            ...m,
+            user: Array.isArray(m.user) ? m.user[0] : m.user,
+          })) as GroupMember[];
+          setMembers(processedMembers);
         }
 
         // Load pending invitations for this user
@@ -167,7 +172,12 @@ export default function GroupDetailPage() {
         if (invitationsErr) {
           console.error("Error loading invitations:", invitationsErr);
         } else {
-          setPendingInvitations((invitationsData || []) as GroupInvitation[]);
+          // Supabase returns nested relations as arrays, convert to single object
+          const processedInvitations = (invitationsData || []).map((inv: any) => ({
+            ...inv,
+            inviter: Array.isArray(inv.inviter) ? inv.inviter[0] : inv.inviter,
+          })) as GroupInvitation[];
+          setPendingInvitations(processedInvitations);
         }
 
         // Load friends (approved contacts) for inviting

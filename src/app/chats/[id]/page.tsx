@@ -124,6 +124,7 @@ export default function ChatDetailPage() {
   const [isInvitedParent, setIsInvitedParent] = useState(false);
   const [invitationActionId, setInvitationActionId] = useState<number | null>(null);
   const [showImagePicker, setShowImagePicker] = useState(false);
+  const [parentLinks, setParentLinks] = useState<{ child_id: string; surveillance_level: string } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
@@ -228,13 +229,13 @@ export default function ChatDetailPage() {
       const isDirectParticipant = c.user1_id === uid || c.user2_id === uid;
       
       // Check if user is a parent of either participant (for surveillance level check)
-      let parentLinks = null;
       let parentSurveillanceLevel: "strict" | "medium" | "mild" | null = null;
       let shouldAllowAccess = false;
       
+      let linksData: { child_id: string; surveillance_level: string } | null = null;
       try {
         if (!cancelled) {
-          const { data: linksData } = await supabase
+          const { data } = await supabase
             .from("parent_child_links")
             .select("child_id, surveillance_level")
             .eq("parent_id", uid)
@@ -243,7 +244,8 @@ export default function ChatDetailPage() {
             .maybeSingle();
           
           if (!cancelled) {
-            parentLinks = linksData;
+            linksData = data;
+            setParentLinks(data);
           }
         }
       } catch (err) {
@@ -261,13 +263,13 @@ export default function ChatDetailPage() {
       // For parent-to-parent chats, this is fine. For child chats, children can access their own chats.
       if (isDirectParticipant) {
         shouldAllowAccess = true;
-      } else if (parentLinks) {
+      } else if (linksData) {
         // Not a direct participant, but is a parent of one of the children
-        parentSurveillanceLevel = parentLinks.surveillance_level as "strict" | "medium" | "mild" | null;
+        parentSurveillanceLevel = linksData.surveillance_level as "strict" | "medium" | "mild" | null;
         
-        if (parentLinks.surveillance_level === "strict") {
+        if (linksData.surveillance_level === "strict") {
           shouldAllowAccess = true;
-        } else if (parentLinks.surveillance_level === "medium") {
+        } else if (linksData.surveillance_level === "medium") {
             // Must check for flagged messages - default deny
             shouldAllowAccess = false;
             
@@ -283,11 +285,11 @@ export default function ChatDetailPage() {
                 console.log("🔍 Medium level parent: Checking flagged messages via API", {
                   chatId,
                   parentId: uid,
-                  childId: parentLinks.child_id
+                  childId: linksData.child_id
                 });
 
                 const apiResponse = await fetch(
-                  `/api/parent/check-flagged-messages?chatId=${encodeURIComponent(chatId)}&parentId=${encodeURIComponent(uid)}`,
+                  `/api/parent/check-flagged-messages?chatId=${encodeURIComponent(chatId || "")}&parentId=${encodeURIComponent(uid)}`,
                   {
                     headers: {
                       Authorization: `Bearer ${session.access_token}`,
@@ -1275,7 +1277,7 @@ export default function ChatDetailPage() {
                     <div className="text-xs text-amber-700 mt-1" role="status">
                       <p>Flagged: {flags.map((f) => f.reason || "No reason").join("; ")}</p>
                       {/* Show reviewed/override button for parents - check if user has parent links */}
-                      {user && parentLinks && parentLinks.length > 0 && (
+                      {user && parentLinks && (
                         <button
                           type="button"
                           onClick={() => {

@@ -220,7 +220,12 @@ export default function GroupChatPage() {
       return;
     }
 
-    setMessages((messagesData || []) as MessageWithSender[]);
+    // Supabase returns nested relations as arrays, convert to single object
+    const processedMessages = (messagesData || []).map((msg: any) => ({
+      ...msg,
+      sender: Array.isArray(msg.sender) ? msg.sender[0] : msg.sender,
+    })) as MessageWithSender[];
+    setMessages(processedMessages);
   }
 
   useEffect(() => {

@@ -295,16 +295,16 @@ export default function ChatsPage() {
                     }
                     
                     // Check if we have data first - if so, use it and skip error handling
-                    const hasData = friendsRes.data && Array.isArray(friendsRes.data) && friendsRes.data.length > 0;
+                    const hasData = friendsRes && friendsRes.data && Array.isArray(friendsRes.data) && friendsRes.data.length > 0;
                     
-                    if (hasData) {
+                    if (hasData && friendsRes && friendsRes.data) {
                       // We have data - use it regardless of any error
                       console.log("Loaded friends successfully:", friendsRes.data.length);
                       if (!cancelled) {
                         setFriends(friendsRes.data as UserRow[]);
                       }
                       // Skip all error handling since we have data
-                    } else if (friendsRes.error) {
+                    } else if (friendsRes && friendsRes.error) {
                       // Only handle errors if we don't have data
                       const errorObj = friendsRes.error;
                       
@@ -446,7 +446,7 @@ export default function ChatsPage() {
                     }
                     
                     // If we still don't have data and there was an error, try fallback: query IDs individually
-                    if (!hasData && friendsRes.error && validIds.length > 1) {
+                    if (!hasData && friendsRes && friendsRes.error && validIds.length > 1) {
                       console.log("Batch query failed, trying individual queries for", validIds.length, "friends");
                       try {
                         const individualResults: UserRow[] = [];
@@ -495,11 +495,11 @@ export default function ChatsPage() {
                           setFriends([]);
                         }
                       }
-                    } else if (!cancelled && friendsRes.data && Array.isArray(friendsRes.data) && friendsRes.data.length > 0) {
+                    } else if (!cancelled && friendsRes && friendsRes.data && Array.isArray(friendsRes.data) && friendsRes.data.length > 0) {
                       // We have data from the original query - use it
                       console.log("Loaded friends successfully:", friendsRes.data.length);
                       setFriends(friendsRes.data as UserRow[]);
-                    } else if (!hasData && !friendsRes.error && !cancelled) {
+                    } else if (!hasData && friendsRes && !friendsRes.error && !cancelled) {
                       // No error but no data - set empty array
                       setFriends([]);
                     }

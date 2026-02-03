@@ -78,7 +78,7 @@ export async function POST(request: NextRequest) {
   let surname = "";
   let pin = "";
   let surveillance_level = "medium"; // Default to medium
-  let photoFile: File | Blob | null = null;
+  let photoFile: File | null = null;
   const contentType = request.headers.get("content-type") ?? "";
 
   if (contentType.includes("multipart/form-data")) {
@@ -91,8 +91,9 @@ export async function POST(request: NextRequest) {
       surveillance_level = levelInput;
     }
     const photo = formData.get("photo");
-    if (photo instanceof File) photoFile = photo;
-    else if (photo instanceof Blob) photoFile = photo;
+    if (photo instanceof File) {
+      photoFile = photo;
+    }
   } else {
     try {
       const body = await request.json() as { first_name?: string; surname?: string; pin?: string; surveillance_level?: string };
@@ -117,9 +118,7 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   }
-  const isImage =
-    (photoFile as File).type?.startsWith?.("image/") ||
-    (photoFile as Blob).type?.startsWith?.("image/");
+  const isImage = photoFile.type?.startsWith?.("image/");
   if (!isImage) {
     return NextResponse.json(
       { error: "The photo must be an image file (e.g. JPEG or PNG) of your child." },
@@ -241,16 +240,16 @@ export async function POST(request: NextRequest) {
   }
 
   // Ensure bucket exists (create if missing), then upload child photo. Roll back child if upload fails.
-  await ensureBucketExists(admin);
+  await ensureBucketExists(admin as any);
 
-  const ext = (photoFile as File).name?.split(".").pop()?.toLowerCase() || "jpg";
+  const ext = photoFile.name?.split(".").pop()?.toLowerCase() || "jpg";
   const safeExt = ["jpg", "jpeg", "png", "webp", "gif"].includes(ext) ? ext : "jpg";
   const storagePath = `${CHILD_PHOTOS_PREFIX}/${childId}.${safeExt}`;
-  const buffer = Buffer.from(await (photoFile as Blob).arrayBuffer());
+  const buffer = Buffer.from(await photoFile.arrayBuffer());
   const { error: uploadErr } = await admin.storage
     .from(CHILD_PHOTOS_BUCKET)
     .upload(storagePath, buffer, {
-      contentType: (photoFile as File).type || (photoFile as Blob).type || "image/jpeg",
+      contentType: photoFile.type || "image/jpeg",
       upsert: true,
     });
 
@@ -270,14 +269,8 @@ export async function POST(request: NextRequest) {
 
   // Get public URL for the uploaded photo
   // This URL will be stored in avatar_url column so the child's photo appears as their avatar
-  const { data: urlData, error: urlError } = admin.storage.from(CHILD_PHOTOS_BUCKET).getPublicUrl(storagePath);
-  
-  if (urlError) {
-    console.error(`[create-child] Error getting public URL:`, urlError);
-    // Continue anyway - the file is uploaded, we just can't get the URL
-  }
-  
-  const avatarUrl = urlData?.publicUrl;
+  const urlData = admin.storage.from(CHILD_PHOTOS_BUCKET).getPublicUrl(storagePath);
+  const avatarUrl = (urlData as any)?.data?.publicUrl || (urlData as any)?.publicUrl;
   
   if (!avatarUrl) {
     console.error(`[create-child] Failed to get public URL for uploaded photo at path: ${storagePath}`);

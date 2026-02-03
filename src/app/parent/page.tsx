@@ -259,48 +259,80 @@ export default function ParentPage() {
             
             const allFriendIds = [...new Set(Object.values(friendIdsByChild).flat())].filter((id): id is string => !!id && typeof id === "string");
             if (allFriendIds.length > 0) {
-              let friendsRes = await supabase
-                .from("users")
-                .select("id, email, username, first_name, surname, avatar_url")
-                .in("id", allFriendIds);
-              
-              if (cancelled) return;
-
-              if (friendsRes.error && /avatar_url|column.*does not exist/i.test(friendsRes.error.message)) {
-                friendsRes = await supabase
+              try {
+                let friendsRes = await supabase
                   .from("users")
-                  .select("id, email, username, first_name, surname")
+                  .select("id, email, username, first_name, surname, avatar_url")
                   .in("id", allFriendIds);
                 
                 if (cancelled) return;
-              }
-              
-              if (!cancelled && friendsRes.data) {
-                const friendsMap: Record<string, UserRow[]> = {};
-                for (const childId of childIds) {
-                  const friendIds = friendIdsByChild[childId] || [];
-                  friendsMap[childId] = (friendsRes.data as UserRow[]).filter((f) => friendIds.includes(f.id));
+
+                if (friendsRes.error && /avatar_url|column.*does not exist/i.test(friendsRes.error.message)) {
+                  const fallbackRes = await supabase
+                    .from("users")
+                    .select("id, email, username, first_name, surname")
+                    .in("id", allFriendIds);
+                  if (fallbackRes.data) {
+                    friendsRes = {
+                      ...fallbackRes,
+                      data: fallbackRes.data.map((u: any) => ({ ...u, avatar_url: null })),
+                    } as any as typeof friendsRes;
+                  } else {
+                    friendsRes = fallbackRes as any as typeof friendsRes;
+                  }
                 }
-                setFriendsByChildId(friendsMap);
-              } else if (!cancelled && friendsRes.error) {
+                
+                if (cancelled) return;
+                
+                // Add avatar_url if missing from query result
+                if (friendsRes.data) {
+                  friendsRes = {
+                    ...friendsRes,
+                    data: friendsRes.data.map((u: any) => ({
+                      ...u,
+                      avatar_url: u.avatar_url ?? null,
+                    })),
+                  } as typeof friendsRes;
+                }
+                
+                if (!cancelled && friendsRes.data) {
+                  const friendsMap: Record<string, UserRow[]> = {};
+                  for (const childId of childIds) {
+                    const friendIds = friendIdsByChild[childId] || [];
+                    friendsMap[childId] = (friendsRes.data as UserRow[]).filter((f) => friendIds.includes(f.id));
+                  }
+                  setFriendsByChildId(friendsMap);
+                } else if (!cancelled && friendsRes.error) {
+                  // Safe error logging
+                  try {
+                    if (friendsRes.error && typeof friendsRes.error === "object" && Object.keys(friendsRes.error).length > 0) {
+                      console.error("Failed to load friends:", friendsRes.error);
+                    } else {
+                      console.error("Unknown error occurred:", friendsRes.error);
+                    }
+                  } catch (logErr) {
+                    console.error("Error occurred but could not be logged:", String(friendsRes.error || "Unknown"));
+                  }
+                }
+              } catch (err) {
                 // Safe error logging
                 try {
-                  if (friendsRes.error && typeof friendsRes.error === "object" && Object.keys(friendsRes.error).length > 0) {
-                    console.error("Failed to load friends:", friendsRes.error);
+                  if (err && typeof err === "object" && Object.keys(err).length > 0) {
+                    console.error("Exception loading friends:", err);
                   } else {
-                    console.error("Unknown error occurred:", friendsRes.error);
+                    console.error("Unknown error occurred:", err);
                   }
                 } catch (logErr) {
-                  console.error("Error occurred but could not be logged:", String(friendsRes.error || "Unknown"));
+                  console.error("Error occurred but could not be logged:", String(err || "Unknown"));
                 }
               }
             }
           }
         } catch (err) {
-          // Safe error logging
+          // Safe error logging for outer try block
           try {
             if (err && typeof err === "object" && Object.keys(err).length > 0) {
-              console.error("Exception loading friends:", err);
+              console.error("Exception in friends loading:", err);
             } else {
               console.error("Unknown error occurred:", err);
             }
@@ -405,7 +437,7 @@ export default function ParentPage() {
 
       if (!cancelled && usersErr) setError(usersErr.message);
       if (!cancelled) setLoading(false);
-      } catch (err) {
+    } catch (err) {
         // Handle AbortError and other exceptions
         if (cancelled) return;
         
@@ -1052,7 +1084,7 @@ export default function ParentPage() {
               const friends = friendsByChildId[link.child_id] || [];
               const friendLabel = (f: UserRow) =>
                 f.first_name && f.surname ? `${f.first_name} ${f.surname}` : f.username ?? f.email ?? "Unknown";
-              const surveillanceLevel = (link.surveillance_level as "strict" | "medium" | "mild") || "medium";
+              const surveillanceLevel: "strict" | "medium" | "mild" = (link.surveillance_level as "strict" | "medium" | "mild") || "medium";
               const canViewChats = surveillanceLevel === "strict";
               
               return (
@@ -1081,10 +1113,12 @@ export default function ParentPage() {
                             <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                               surveillanceLevel === "strict" ? "bg-red-100 text-red-700" :
                               surveillanceLevel === "medium" ? "bg-yellow-100 text-yellow-700" :
-                              "bg-green-100 text-green-700"
+                              surveillanceLevel === "mild" ? "bg-green-100 text-green-700" :
+                              "bg-gray-100 text-gray-700"
                             }`}>
                               {surveillanceLevel === "strict" ? "Strict" :
-                               surveillanceLevel === "medium" ? "Medium" : "Mild"}
+                               surveillanceLevel === "medium" ? "Medium" :
+                               surveillanceLevel === "mild" ? "Mild" : "Unknown"}
                             </span>
                           </div>
                         </div>
@@ -1107,18 +1141,24 @@ export default function ParentPage() {
                           <div className="flex items-center gap-2">
                             <span className="font-medium text-gray-900 truncate">{label}</span>
                             <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                              surveillanceLevel === "strict" ? "bg-red-100 text-red-700" :
-                              surveillanceLevel === "medium" ? "bg-yellow-100 text-yellow-700" :
-                              "bg-green-100 text-green-700"
+                              (surveillanceLevel as string) === "strict" ? "bg-red-100 text-red-700" :
+                              (surveillanceLevel as string) === "medium" ? "bg-yellow-100 text-yellow-700" :
+                              (surveillanceLevel as string) === "mild" ? "bg-green-100 text-green-700" :
+                              "bg-gray-100 text-gray-700"
                             }`}>
-                              {surveillanceLevel === "strict" ? "Strict" :
-                               surveillanceLevel === "medium" ? "Medium" : "Mild"}
+                              {(surveillanceLevel as string) === "strict" ? "Strict" :
+                               (surveillanceLevel as string) === "medium" ? "Medium" :
+                               (surveillanceLevel as string) === "mild" ? "Mild" : "Unknown"}
                             </span>
                           </div>
                           <p className="text-xs text-gray-500 mt-0.5">
-                            {surveillanceLevel === "medium" 
+                            {(surveillanceLevel as string) === "strict" 
+                              ? "Full access to chats and pictures"
+                              : (surveillanceLevel as string) === "medium" 
                               ? "Access only after keyword notification"
-                              : "Access only when child flags a message"}
+                              : (surveillanceLevel as string) === "mild"
+                              ? "Access only when child flags a message"
+                              : "Unknown surveillance level"}
                           </p>
                         </div>
                       </div>

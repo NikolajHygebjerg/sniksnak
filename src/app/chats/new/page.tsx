@@ -130,22 +130,42 @@ export default function NewChatPage() {
             const fallbackError = usersRes.error.message || "";
             // Try without avatar_url if that's the issue
             if (/avatar_url|schema cache|column/i.test(fallbackError)) {
-              usersRes = await supabase
+              const fallbackRes = await supabase
                 .from("users")
                 .select("id, email, username, first_name, surname")
                 .not("username", "is", null)
                 .in("id", childIdsArray)
                 .order("email");
+              // Add avatar_url to match expected type
+              if (fallbackRes.data) {
+                usersRes = {
+                  ...fallbackRes,
+                  data: fallbackRes.data.map((u: any) => ({ ...u, avatar_url: null as string | null })),
+                } as any as typeof usersRes;
+              } else {
+                usersRes = fallbackRes;
+              }
             }
           }
         } else if (/avatar_url|schema cache|column/i.test(errorMsg)) {
           // avatar_url column issue - retry without it
-          usersRes = await supabase
+          const fallbackRes = await supabase
             .from("users")
             .select("id, email, username, first_name, surname")
             .eq("is_child", true)
             .in("id", childIdsArray)
             .order("email");
+          if (fallbackRes.data) {
+            usersRes = {
+              ...fallbackRes,
+              data: fallbackRes.data.map((u: any) => ({ ...u, avatar_url: null })),
+            } as any as typeof usersRes;
+          } else {
+            usersRes = {
+              ...fallbackRes,
+              data: [],
+            } as any as typeof usersRes;
+          }
         }
       }
       
@@ -158,13 +178,19 @@ export default function NewChatPage() {
       } else {
         // Filter to ensure we only have children (double-check with is_child if available)
         // IMPORTANT: Only show children that have an active parent link AND are in the childIdsArray
-        const childrenOnly = (usersData ?? []).filter((u: UserRow) => {
+        // Add avatar_url if missing from query result
+        const usersWithAvatar = (usersData ?? []).map((u: any) => ({
+          ...u,
+          avatar_url: u.avatar_url ?? null,
+        })) as UserRow[];
+        
+        const childrenOnly = usersWithAvatar.filter((u: UserRow) => {
           // Must be in the childIdsArray (has active parent link)
           const hasActiveLink = childIdsArray.includes(u.id);
           // If is_child column exists in response, use it; otherwise fall back to username check
           const hasUsername = u.username != null && String(u.username).trim() !== "";
           return hasActiveLink && hasUsername; // Both conditions must be true
-        }) as UserRow[];
+        });
         setOtherUsers(childrenOnly);
         setHasOtherChildren(childrenOnly.length > 0);
       }
