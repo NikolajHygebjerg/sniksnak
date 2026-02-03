@@ -43,7 +43,7 @@ export default function LoginPage() {
         const { data, error: err } = await supabase.auth.signUp({ email, password });
         if (err) throw err;
         if (data?.user && !data.user.identities?.length) {
-          setMessage("An account with this email already exists. Log in instead.");
+          setMessage("En konto med denne email findes allerede. Log ind i stedet.");
           return;
         }
         if (data?.session) {
@@ -51,7 +51,7 @@ export default function LoginPage() {
           router.refresh();
           return;
         }
-        setMessage("Check your email to confirm your account, then log in.");
+        setMessage("Tjek din email for at bekræfte din konto, og log derefter ind.");
         return;
       } else {
         const { error: err } = await supabase.auth.signInWithPassword({
@@ -63,7 +63,7 @@ export default function LoginPage() {
         router.refresh();
       }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      setError(err instanceof Error ? err.message : "Noget gik galt.");
     } finally {
       setLoading(false);
     }
@@ -77,7 +77,7 @@ export default function LoginPage() {
     const sn = surname.trim();
     const p = pin.trim();
     if (!fn || !sn || !p) {
-      setError("Enter your first name, surname and PIN.");
+      setError("Indtast dit fornavn, efternavn og PIN.");
       return;
     }
     setLoading(true);
@@ -92,7 +92,7 @@ export default function LoginPage() {
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        setError(data.error ?? "Could not find your account. A parent must create it first.");
+        setError(data.error ?? "Kunne ikke finde din konto. En forælder skal oprette den først.");
         return;
       }
 
@@ -103,14 +103,14 @@ export default function LoginPage() {
       });
 
       if (signInErr) {
-        setError(signInErr.message === "Invalid login credentials" ? "Wrong PIN." : signInErr.message);
+        setError(signInErr.message === "Invalid login credentials" ? "Forkert PIN." : signInErr.message);
         return;
       }
 
       router.push("/chats");
       router.refresh();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      setError(err instanceof Error ? err.message : "Noget gik galt.");
     } finally {
       setLoading(false);
     }
@@ -119,7 +119,7 @@ export default function LoginPage() {
   return (
     <main className="min-h-screen flex flex-col items-center justify-center p-6">
       <div className="w-full max-w-sm space-y-6">
-        <h1 className="text-2xl font-semibold text-center">Chat App</h1>
+        <h1 className="text-2xl font-semibold text-center">Sniksnak Chat</h1>
         
         {/* Mode selector tabs */}
         <div className="flex gap-2 border-b border-gray-200">
@@ -136,7 +136,7 @@ export default function LoginPage() {
                 : "text-gray-500 hover:text-gray-700"
             }`}
           >
-            Parent Login
+            Forælder Login
           </button>
           <button
             type="button"
@@ -151,14 +151,14 @@ export default function LoginPage() {
                 : "text-gray-500 hover:text-gray-700"
             }`}
           >
-            Child Login
+            Barn Login
           </button>
         </div>
 
         {mode === "parent" ? (
           <>
             <p className="text-sm text-gray-500 text-center">
-              {isSignUp ? "Create a parent account (email + password)" : "Log in with your email and password"}
+              {isSignUp ? "Opret en forældrekonto (email + adgangskode)" : "Log ind med din email og adgangskode"}
             </p>
 
             <form onSubmit={handleParentSubmit} className="space-y-4">
@@ -178,7 +178,7 @@ export default function LoginPage() {
               </div>
               <div>
                 <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
-                  Password
+                  Adgangskode
                 </label>
                 <input
                   id="password"
@@ -208,12 +208,12 @@ export default function LoginPage() {
                 disabled={loading}
                 className="w-full py-2 px-4 bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700 disabled:opacity-50"
               >
-                {loading ? "…" : isSignUp ? "Sign up" : "Log in"}
+                {loading ? "…" : isSignUp ? "Tilmeld dig" : "Log ind"}
               </button>
             </form>
 
             <p className="text-center text-sm text-gray-500">
-              {isSignUp ? "Already have an account? " : "No account yet? "}
+              {isSignUp ? "Har du allerede en konto? " : "Ingen konto endnu? "}
               <button
                 type="button"
                 onClick={() => {
@@ -223,21 +223,21 @@ export default function LoginPage() {
                 }}
                 className="text-blue-600 hover:underline"
               >
-                {isSignUp ? "Log in" : "Sign up"}
+                {isSignUp ? "Log ind" : "Tilmeld dig"}
               </button>
             </p>
           </>
         ) : (
           <>
             <p className="text-sm text-gray-500 text-center">
-              Log in with the first name and surname your parent set for you, and your PIN.
+              Log ind med det fornavn og efternavn din forælder har sat for dig, og din PIN.
             </p>
 
             <form onSubmit={handleChildSubmit} className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label htmlFor="child-firstname" className="block text-sm font-medium text-gray-700 mb-1">
-                    First name
+                    Fornavn
                   </label>
                   <input
                     id="child-firstname"
@@ -246,13 +246,13 @@ export default function LoginPage() {
                     onChange={(e) => setFirstName(e.target.value)}
                     required
                     autoComplete="given-name"
-                    placeholder="First name"
+                    placeholder="Fornavn"
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
                 <div>
                   <label htmlFor="child-surname" className="block text-sm font-medium text-gray-700 mb-1">
-                    Surname
+                    Efternavn
                   </label>
                   <input
                     id="child-surname"
@@ -261,7 +261,7 @@ export default function LoginPage() {
                     onChange={(e) => setSurname(e.target.value)}
                     required
                     autoComplete="family-name"
-                    placeholder="Surname"
+                    placeholder="Efternavn"
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
@@ -279,7 +279,7 @@ export default function LoginPage() {
                   minLength={4}
                   maxLength={12}
                   autoComplete="off"
-                  placeholder="Your PIN"
+                  placeholder="Din PIN"
                   inputMode="numeric"
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
@@ -301,19 +301,19 @@ export default function LoginPage() {
                 disabled={loading}
                 className="w-full py-2 px-4 bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700 disabled:opacity-50"
               >
-                {loading ? "Logging in…" : "Log in"}
+                {loading ? "Logger ind…" : "Log ind"}
               </button>
             </form>
 
             <p className="text-center text-sm text-gray-500">
-              No account? A parent must create one for you (first name + surname) in Parent view and share the invitation link.
+              Ingen konto? En forælder skal oprette en for dig (fornavn + efternavn) i Forældrevisning og dele invitationslinket.
             </p>
           </>
         )}
 
         <p className="text-center text-sm text-gray-500">
           <Link href="/" className="text-gray-400 hover:text-gray-600">
-            ← Home
+            ← Hjem
           </Link>
         </p>
       </div>

@@ -688,9 +688,9 @@ export default function ChatsPage() {
       <main
         className="min-h-screen flex items-center justify-center p-4 sm:p-6"
         role="status"
-        aria-label="Loading chats"
+        aria-label="Indlæser chats"
       >
-        <p className="text-gray-500">Loading…</p>
+        <p className="text-gray-500">Indlæser…</p>
       </main>
     );
   }
@@ -712,23 +712,23 @@ export default function ChatsPage() {
               <Link
                 href="/parent"
                 className="text-sm font-medium text-gray-600 hover:text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded-lg px-2 py-1 min-h-[44px] min-w-[44px] inline-flex items-center justify-center"
-                aria-label="Parent view"
+                aria-label="Forældrevisning"
               >
-                Parent view
+                Forældrevisning
               </Link>
             )}
             <Link
               href="/chats/new"
               className="text-sm font-medium text-blue-600 hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded-lg px-2 py-1 min-h-[44px] min-w-[44px] inline-flex items-center justify-center"
-              aria-label="Find Chat-friends"
+              aria-label="Find chat-venner"
             >
-              Find Chat-friends
+              Find chat-venner
             </Link>
             {isChild && (
               <Link
                 href="/groups"
                 className="text-sm font-medium text-blue-600 hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded-lg px-2 py-1 min-h-[44px] min-w-[44px] inline-flex items-center justify-center"
-                aria-label="Groups"
+                aria-label="Grupper"
               >
                 Grupper
               </Link>
@@ -737,9 +737,9 @@ export default function ChatsPage() {
               type="button"
               onClick={handleLogout}
               className="text-sm text-blue-600 hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded px-2 py-1 min-h-[44px] min-w-[44px] inline-flex items-center justify-center"
-              aria-label="Log out"
+              aria-label="Log ud"
             >
-              Log out
+              Log ud
             </button>
           </div>
         </header>
@@ -753,7 +753,7 @@ export default function ChatsPage() {
         {isChild && (
           <section className="mb-4 rounded-xl border border-gray-200 bg-white p-4" aria-label="Friends">
             <h2 className="text-sm font-semibold text-gray-700 mb-3">
-              My Friends {friends.length > 0 && `(${friends.length})`}
+              Mine venner {friends.length > 0 && `(${friends.length})`}
             </h2>
             {friends.length > 0 ? (
               <div className="flex flex-wrap gap-2">
@@ -795,7 +795,7 @@ export default function ChatsPage() {
                 })}
               </div>
             ) : (
-              <p className="text-sm text-gray-500">No friends yet. Your parent needs to approve connections first.</p>
+              <p className="text-sm text-gray-500">Ingen venner endnu. Din forælder skal godkende forbindelser først.</p>
             )}
           </section>
         )}
@@ -807,22 +807,22 @@ export default function ChatsPage() {
           >
             {isChild ? (
               <>
-                <p className="text-lg font-medium text-gray-800 mb-2">You have no Chat-friends yet</p>
+                <p className="text-lg font-medium text-gray-800 mb-2">Du har ingen chat-venner endnu</p>
                 <p className="text-gray-500 mb-4 max-w-sm">
-                  Connect with other children by searching for their name or by sending them an invite to join the app.
+                  Forbind med andre børn ved at søge efter deres navn eller ved at sende dem en invitation til at deltage i appen.
                 </p>
                 <Link
                   href="/chats/new"
                   className="inline-block rounded-lg bg-blue-600 px-4 py-3 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 min-h-[44px] inline-flex items-center justify-center"
                 >
-                  Find Chat-friends
+                  Find chat-venner
                 </Link>
               </>
             ) : (
               <>
-                <p className="text-lg font-medium text-gray-800 mb-2">No chats yet</p>
+                <p className="text-lg font-medium text-gray-800 mb-2">Ingen chats endnu</p>
                 <p className="text-gray-500 mb-4 max-w-sm">
-                  Your chats with other parents will appear here. You&apos;ll receive a chat when another parent&apos;s child wants to connect with your child.
+                  Dine chats med andre forældre vil vises her. Du modtager en chat, når et andet forældres barn vil forbinde med dit barn.
                 </p>
               </>
             )}
@@ -869,9 +869,9 @@ export default function ChatsPage() {
                       minute: "2-digit",
                     })
                   : date.toLocaleDateString();
-              const preview = lastMsg
-                ? lastMsg.content?.trim() || "Attachment"
-                : "No messages yet";
+                const preview = lastMsg
+                ? lastMsg.content?.trim() || "Vedhæftet fil"
+                : "Ingen beskeder endnu";
 
               return (
                 <li key={chat.id} role="listitem">
@@ -938,7 +938,7 @@ export default function ChatsPage() {
             href="/"
             className="text-sm text-gray-400 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded px-1 py-0.5"
           >
-            ← Home
+            ← Hjem
           </Link>
         </p>
       </div>

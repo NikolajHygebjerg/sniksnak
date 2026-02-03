@@ -92,7 +92,7 @@ export default function ParentPage() {
       if (!res.ok) {
         console.error("Error updating surveillance level:", data.error, data.details);
         // Show error to user
-        setError(`Failed to update surveillance level: ${data.error}${data.details ? ` (${data.details})` : ""}`);
+        setError(`Kunne ikke opdatere overvågningsniveau: ${data.error}${data.details ? ` (${data.details})` : ""}`);
         return;
       }
       
@@ -459,7 +459,7 @@ export default function ParentPage() {
         }
         
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : "An error occurred while loading");
+          setError(err instanceof Error ? err.message : "Der opstod en fejl under indlæsning");
           setLoading(false);
         }
       }
@@ -479,28 +479,28 @@ export default function ParentPage() {
     const surname = (suggested?.surname ?? createSurname).trim();
     const pin = createPin.trim();
     if (!first_name || !surname) {
-      setCreateMessage({ type: "error", text: "Enter both first name and surname." });
+      setCreateMessage({ type: "error", text: "Indtast både fornavn og efternavn." });
       return;
     }
     if (first_name.length < 2) {
-      setCreateMessage({ type: "error", text: "First name must be at least 2 characters." });
+      setCreateMessage({ type: "error", text: "Fornavn skal være mindst 2 tegn." });
       return;
     }
     if (surname.length < 2) {
-      setCreateMessage({ type: "error", text: "Surname must be at least 2 characters." });
+      setCreateMessage({ type: "error", text: "Efternavn skal være mindst 2 tegn." });
       return;
     }
     const anonymousNames = ["incognito", "anonymous", "anon", "unknown", "hidden", "secret", "nickname", "fake", "test", "demo"];
     if (anonymousNames.includes(first_name.toLowerCase()) || anonymousNames.includes(surname.toLowerCase())) {
-      setCreateMessage({ type: "error", text: "Use your child's real first name and surname." });
+      setCreateMessage({ type: "error", text: "Brug dit barns rigtige fornavn og efternavn." });
       return;
     }
     if (pin.length < 4 || pin.length > 12) {
-      setCreateMessage({ type: "error", text: "PIN must be 4–12 characters." });
+      setCreateMessage({ type: "error", text: "PIN skal være 4–12 tegn." });
       return;
     }
     if (!createPhotoFile || !createPhotoFile.type.startsWith("image/")) {
-      setCreateMessage({ type: "error", text: "A photo of your child is required. Please upload a clear photo of your child for security." });
+      setCreateMessage({ type: "error", text: "Et billede af dit barn er påkrævet. Upload venligst et klart billede af dit barn af sikkerhedsmæssige årsager." });
       return;
     }
     setCreateSubmitting(true);
@@ -512,7 +512,7 @@ export default function ParentPage() {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.access_token) {
       setCreateSubmitting(false);
-      setCreateMessage({ type: "error", text: "Session expired. Please log in again." });
+      setCreateMessage({ type: "error", text: "Session udløbet. Log venligst ind igen." });
       return;
     }
     const formData = new FormData();
@@ -532,10 +532,10 @@ export default function ParentPage() {
       if (res.status === 409 && data.code === "NAME_TAKEN") {
         setNameTaken(true);
         setDuplicateNameSuffix("");
-        setCreateMessage({ type: "error", text: data.error ?? "This name is already in use. Add a city, number, or nickname in the box below and click Accept." });
+        setCreateMessage({ type: "error", text: data.error ?? "Dette navn er allerede i brug. Tilføj et bynavn, nummer eller kaldenavn i feltet nedenfor og klik Acceptér." });
       } else {
         const detail = data.detail ? ` (${data.detail})` : "";
-        setCreateMessage({ type: "error", text: (data.error ?? "Failed to create child account.") + detail });
+        setCreateMessage({ type: "error", text: (data.error ?? "Kunne ikke oprette børnekonto.") + detail });
       }
       return;
     }
@@ -549,9 +549,9 @@ export default function ParentPage() {
     setDuplicateNameSuffix("");
     if (data.invitationLink) {
       setInvitationLink(data.invitationLink);
-      setCreateMessage({ type: "success", text: `${data.displayName ?? first_name + " " + surname} is set up. Share the invitation link below with your child.` });
+      setCreateMessage({ type: "success", text: `${data.displayName ?? first_name + " " + surname} er oprettet. Del invitationslinket nedenfor med dit barn.` });
     } else {
-      setCreateMessage({ type: "success", text: `${data.displayName ?? first_name + " " + surname} can log in at Child login with their full name and PIN.` });
+      setCreateMessage({ type: "success", text: `${data.displayName ?? first_name + " " + surname} kan logge ind på Barn login med deres fulde navn og PIN.` });
     }
     setRefreshKey((k) => k + 1);
   }
@@ -562,7 +562,7 @@ export default function ParentPage() {
     if (!user || linkSubmitting) return;
     const email = linkEmail.trim().toLowerCase();
     if (!email) {
-      setLinkMessage({ type: "error", text: "Enter the child's email." });
+      setLinkMessage({ type: "error", text: "Indtast barnets email." });
       return;
     }
     setLinkSubmitting(true);
@@ -577,13 +577,13 @@ export default function ParentPage() {
 
     if (userErr || !childUser) {
       setLinkSubmitting(false);
-      setLinkMessage({ type: "error", text: "No account found with that email." });
+      setLinkMessage({ type: "error", text: "Ingen konto fundet med den email." });
       return;
     }
 
     if (childUser.id === user.id) {
       setLinkSubmitting(false);
-      setLinkMessage({ type: "error", text: "You cannot link yourself as a child." });
+      setLinkMessage({ type: "error", text: "Du kan ikke tilknytte dig selv som barn." });
       return;
     }
 
@@ -596,7 +596,7 @@ export default function ParentPage() {
     setLinkSubmitting(false);
     if (insertErr) {
       if (insertErr.code === "23505") {
-        setLinkMessage({ type: "error", text: "This child is already linked." });
+        setLinkMessage({ type: "error", text: "Dette barn er allerede tilknyttet." });
       } else {
         setLinkMessage({ type: "error", text: insertErr.message });
       }
@@ -604,7 +604,7 @@ export default function ParentPage() {
     }
 
     setLinkEmail("");
-    setLinkMessage({ type: "success", text: `${childUser.email} is now linked as a child.` });
+    setLinkMessage({ type: "success", text: `${childUser.email} er nu tilknyttet som barn.` });
     setLinks((prev) => [...prev, inserted as LinkRow]);
     setUsersById((prev) => ({ ...prev, [childUser.id]: childUser as UserRow }));
   }
@@ -612,7 +612,7 @@ export default function ParentPage() {
   /** Delete/unlink a child */
   async function handleDeleteChild(childId: string, childName: string) {
     if (!user) return;
-    if (!confirm(`Are you sure you want to delete the account for ${childName}? This will remove your connection to this child, but their account will remain.`)) {
+    if (!confirm(`Er du sikker på, at du vil slette kontoen for ${childName}? Dette vil fjerne din forbindelse til dette barn, men deres konto forbliver.`)) {
       return;
     }
     setDeletingChildId(childId);
@@ -656,7 +656,7 @@ export default function ParentPage() {
   if (accessDenied) {
     return (
       <main className="min-h-screen flex items-center justify-center p-6">
-        <p className="text-gray-500">You don&apos;t have access to the parent view. Redirecting…</p>
+        <p className="text-gray-500">Du har ikke adgang til forældrevisningen. Omdirigerer…</p>
       </main>
     );
   }
@@ -664,7 +664,7 @@ export default function ParentPage() {
   if (loading) {
     return (
       <main className="min-h-screen flex items-center justify-center p-6" role="status" aria-label="Loading">
-        <p className="text-gray-500">Loading…</p>
+        <p className="text-gray-500">Indlæser…</p>
       </main>
     );
   }
@@ -675,7 +675,7 @@ export default function ParentPage() {
     <main className="min-h-screen p-4 sm:p-6 safe-area-inset">
       <div className="max-w-2xl mx-auto">
         <header className="flex items-center justify-between gap-4 mb-6">
-          <h1 className="text-xl sm:text-2xl font-semibold">Parent view</h1>
+          <h1 className="text-xl sm:text-2xl font-semibold">Forældrevisning</h1>
           <nav className="flex items-center gap-4">
             <Link
               href="/chats"
@@ -688,17 +688,17 @@ export default function ParentPage() {
 
         {error && !firstnameSurnameColumnMissing && (
           <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-4" role="alert">
-            <p className="text-sm font-medium text-amber-800">Setup required</p>
+            <p className="text-sm font-medium text-amber-800">Opsætning påkrævet</p>
             {schemaMissing ? (
               <>
                 <p className="mt-1 text-sm text-amber-700">
-                  The <code className="rounded bg-amber-100 px-1">parent_child_links</code> table
-                  does not exist yet. Run the Phase 6 migration in your Supabase project.
+                  Tabellen <code className="rounded bg-amber-100 px-1">parent_child_links</code>
+                  eksisterer ikke endnu. Kør Phase 6 migrationen i dit Supabase projekt.
                 </p>
                 <ol className="mt-3 list-decimal list-inside space-y-1 text-sm text-amber-800">
-                  <li>Open Supabase Dashboard → SQL Editor</li>
-                  <li>Paste and run the contents of <code className="rounded bg-amber-100 px-1">supabase/migrations/003_phase6_parent_controls.sql</code></li>
-                  <li>Refresh this page</li>
+                  <li>Åbn Supabase Dashboard → SQL Editor</li>
+                  <li>Indsæt og kør indholdet af <code className="rounded bg-amber-100 px-1">supabase/migrations/003_phase6_parent_controls.sql</code></li>
+                  <li>Opdater denne side</li>
                 </ol>
                 <p className="mt-2 text-xs text-amber-600">
                   Raw error: {error}
@@ -712,14 +712,14 @@ export default function ParentPage() {
 
         {firstnameSurnameColumnMissing && (
           <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-4" role="alert">
-            <p className="text-sm font-medium text-amber-800">Setup required: add first name and surname</p>
+            <p className="text-sm font-medium text-amber-800">Opsætning påkrævet: tilføj fornavn og efternavn</p>
             <p className="mt-1 text-sm text-amber-700">
-              The <code className="rounded bg-amber-100 px-1">users</code> table is missing the <code className="rounded bg-amber-100 px-1">first_name</code> and <code className="rounded bg-amber-100 px-1">surname</code> columns. Run migration 005 in your Supabase project.
+              Tabellen <code className="rounded bg-amber-100 px-1">users</code> mangler kolonnerne <code className="rounded bg-amber-100 px-1">first_name</code> og <code className="rounded bg-amber-100 px-1">surname</code>. Kør migration 005 i dit Supabase projekt.
             </p>
             <ol className="mt-3 list-decimal list-inside space-y-1 text-sm text-amber-800">
-              <li>Open Supabase Dashboard → SQL Editor → New query</li>
-              <li>Paste and run the contents of <code className="rounded bg-amber-100 px-1">supabase/migrations/005_child_firstname_surname.sql</code></li>
-              <li>Refresh this page</li>
+              <li>Åbn Supabase Dashboard → SQL Editor → Ny forespørgsel</li>
+              <li>Indsæt og kør indholdet af <code className="rounded bg-amber-100 px-1">supabase/migrations/005_child_firstname_surname.sql</code></li>
+              <li>Opdater denne side</li>
             </ol>
             <p className="mt-2 text-xs text-amber-600">
               Raw error: {error}
@@ -729,33 +729,33 @@ export default function ParentPage() {
 
         {usernameColumnMissing && !error && !firstnameSurnameColumnMissing && (
           <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-4" role="alert">
-            <p className="text-sm font-medium text-amber-800">Add child names (username column)</p>
+            <p className="text-sm font-medium text-amber-800">Tilføj børnenavne (username kolonne)</p>
             <p className="mt-1 text-sm text-amber-700">
-              The <code className="rounded bg-amber-100 px-1">username</code> column is missing on <code className="rounded bg-amber-100 px-1">users</code>.
-              Run this in Supabase Dashboard → SQL Editor so child accounts use real names:
+              Kolonnen <code className="rounded bg-amber-100 px-1">username</code> mangler i <code className="rounded bg-amber-100 px-1">users</code>.
+              Kør dette i Supabase Dashboard → SQL Editor, så børnekonti bruger rigtige navne:
             </p>
             <ol className="mt-3 list-decimal list-inside space-y-1 text-sm text-amber-800">
-              <li>Open Supabase Dashboard → SQL Editor → New query</li>
-              <li>Paste and run the contents of <code className="rounded bg-amber-100 px-1">supabase/migrations/004_child_username.sql</code></li>
-              <li>Refresh this page</li>
+              <li>Åbn Supabase Dashboard → SQL Editor → Ny forespørgsel</li>
+              <li>Indsæt og kør indholdet af <code className="rounded bg-amber-100 px-1">supabase/migrations/004_child_username.sql</code></li>
+              <li>Opdater denne side</li>
             </ol>
           </div>
         )}
 
         <p className="text-gray-500 text-sm mb-4">
-          Linked children. Click a child to see their chats and messages (read-only). When another child wants to connect, you&apos;ll get a chat from their parent — open Chats to see it and accept or reject there.
+          Tilknyttede børn. Klik på et barn for at se deres chats og beskeder (skrivebeskyttet). Når et andet barn vil forbinde, får du en chat fra deres forælder — åbn Chats for at se den og acceptér eller afvis der.
         </p>
 
         {/* Pending friend requests section */}
         {pendingRequests.length > 0 && (
-          <section className="rounded-xl border border-blue-200 bg-blue-50 p-4 sm:p-6 mb-6" aria-label="Pending friend requests">
-            <h2 className="text-sm font-semibold text-gray-700 mb-3">Pending friend requests</h2>
+          <section className="rounded-xl border border-blue-200 bg-blue-50 p-4 sm:p-6 mb-6" aria-label="Afventende venneanmodninger">
+            <h2 className="text-sm font-semibold text-gray-700 mb-3">Afventende venneanmodninger</h2>
             <div className="space-y-2">
               {pendingRequests.map((req) => (
                 <div key={req.id} className="flex items-center justify-between p-3 bg-white rounded-lg border border-blue-200">
                   <div className="flex-1 min-w-0">
                     <p className="text-sm text-gray-700">
-                      <span className="font-medium">{req.child_name}</span> wants to be friends with <span className="font-medium">{req.contact_name}</span>
+                      <span className="font-medium">{req.child_name}</span> vil være venner med <span className="font-medium">{req.contact_name}</span>
                     </p>
                   </div>
                   <div className="flex items-center gap-2 ml-4">
@@ -764,14 +764,14 @@ export default function ParentPage() {
                         href={`/chats/${req.chat_id}`}
                         className="text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline"
                       >
-                        View in Chats →
+                        Se i Chats →
                       </Link>
                     ) : (
                       <Link
                         href="/chats"
                         className="text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline"
                       >
-                        View in Chats →
+                        Se i Chats →
                       </Link>
                     )}
                   </div>
@@ -782,23 +782,23 @@ export default function ParentPage() {
         )}
 
         {/* Primary: create a child account (first name + surname + PIN). Child can only use app if parent creates them. */}
-        <section className="rounded-xl border border-gray-200 bg-white p-4 sm:p-6 mb-6" aria-label="Create a child account">
-          <h2 className="text-sm font-semibold text-gray-700 mb-2">Create a child account</h2>
+        <section className="rounded-xl border border-gray-200 bg-white p-4 sm:p-6 mb-6" aria-label="Opret børnekonto">
+          <h2 className="text-sm font-semibold text-gray-700 mb-2">Opret børnekonto</h2>
           <p className="text-sm text-gray-500 mb-3">
-            Your child can only use the app after you create their account. Use their <strong>real first name and surname</strong> so they can&apos;t chat anonymously.
+            Dit barn kan kun bruge appen efter du har oprettet deres konto. Brug deres <strong>rigtige fornavn og efternavn</strong>, så de ikke kan chatte anonymt.
           </p>
           <form onSubmit={(e) => handleCreateChild(e)} className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label htmlFor="parent-create-firstname" className="block text-sm font-medium text-gray-700 mb-1">
-                  First name
+                  Fornavn
                 </label>
                 <input
                   id="parent-create-firstname"
                   type="text"
                   value={createFirstName}
                   onChange={(e) => setCreateFirstName(e.target.value)}
-                  placeholder="e.g. Alex"
+                  placeholder="f.eks. Alex"
                   disabled={createSubmitting}
                   autoComplete="given-name"
                   minLength={2}
@@ -808,14 +808,14 @@ export default function ParentPage() {
               </div>
               <div>
                 <label htmlFor="parent-create-surname" className="block text-sm font-medium text-gray-700 mb-1">
-                  Surname
+                  Efternavn
                 </label>
                 <input
                   id="parent-create-surname"
                   type="text"
                   value={createSurname}
                   onChange={(e) => setCreateSurname(e.target.value)}
-                  placeholder="e.g. Jensen"
+                  placeholder="f.eks. Jensen"
                   disabled={createSubmitting}
                   autoComplete="family-name"
                   minLength={2}
@@ -825,14 +825,14 @@ export default function ParentPage() {
               </div>
             </div>
             <p className="text-xs text-gray-500">
-              Use your child&apos;s real first name and surname. Anonymous or fake names are not allowed.
+              Brug dit barns rigtige fornavn og efternavn. Anonyme eller falske navne er ikke tilladt.
             </p>
             <div>
               <label htmlFor="parent-create-photo" className="block text-sm font-medium text-gray-700 mb-1">
-                Photo of your child <span className="text-red-600">(required)</span>
+                Billede af dit barn <span className="text-red-600">(påkrævet)</span>
               </label>
               <p className="text-xs text-gray-500 mb-2">
-                This must be a clear photo of your child for security. It will be visible to other users they chat with.
+                Dette skal være et klart billede af dit barn af sikkerhedsmæssige årsager. Det vil være synligt for andre brugere de chatter med.
               </p>
               <input
                 id="parent-create-photo"
@@ -849,7 +849,7 @@ export default function ParentPage() {
                     setCreatePhotoPreview(URL.createObjectURL(file));
                     setCreateMessage(null);
                   } else if (file) {
-                    setCreateMessage({ type: "error", text: "Please choose an image file (e.g. JPEG or PNG)." });
+                    setCreateMessage({ type: "error", text: "Vælg venligst en billedfil (f.eks. JPEG eller PNG)." });
                   }
                 }}
                 className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 file:mr-3 file:rounded file:border-0 file:bg-blue-50 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-blue-700"
@@ -858,7 +858,7 @@ export default function ParentPage() {
                 <div className="mt-2">
                   <img
                     src={createPhotoPreview}
-                    alt="Child photo preview"
+                    alt="Forhåndsvisning af barnets foto"
                     className="h-24 w-24 rounded-full object-cover border-2 border-gray-200"
                   />
                 </div>
@@ -866,7 +866,7 @@ export default function ParentPage() {
             </div>
             <div>
               <label htmlFor="parent-create-pin" className="block text-sm font-medium text-gray-700 mb-1">
-                PIN (4–12 characters; child will use this to log in)
+                PIN (4–12 tegn; barnet vil bruge dette til at logge ind)
               </label>
               <input
                 id="parent-create-pin"
@@ -884,12 +884,12 @@ export default function ParentPage() {
             </div>
             {nameTaken && (
               <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
-                <p className="text-sm font-semibold text-amber-900 mb-1">We require your child&apos;s real name for security</p>
+                <p className="text-sm font-semibold text-amber-900 mb-1">Vi kræver dit barns rigtige navn af sikkerhedsmæssige årsager</p>
                 <p className="text-sm text-amber-800 mb-3">
-                  Another account already has this name. Keep the real first name and surname above, and add a <strong>city name</strong>, <strong>number</strong>, or <strong>nickname</strong> in the box below to make it unique (e.g. Copenhagen, 2, or AJ).
+                  En anden konto har allerede dette navn. Behold det rigtige fornavn og efternavn ovenfor, og tilføj et <strong>bynavn</strong>, <strong>nummer</strong> eller <strong>kaldenavn</strong> i feltet nedenfor for at gøre det unikt (f.eks. København, 2 eller AJ).
                 </p>
                 <label htmlFor="parent-duplicate-suffix" className="block text-sm font-medium text-amber-800 mb-1">
-                  City, number, or nickname to add after the surname
+                  Bynavn, nummer eller kaldenavn at tilføje efter efternavnet
                 </label>
                 <div className="flex flex-wrap gap-2 items-end">
                   <input
@@ -900,7 +900,7 @@ export default function ParentPage() {
                       setDuplicateNameSuffix(e.target.value);
                       setCreateMessage(null);
                     }}
-                    placeholder="e.g. Copenhagen, 2, or AJ"
+                    placeholder="f.eks. København, 2 eller AJ"
                     disabled={createSubmitting}
                     className="flex-1 min-w-[160px] rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500 disabled:bg-gray-100"
                     autoComplete="off"
@@ -910,11 +910,11 @@ export default function ParentPage() {
                     onClick={(e) => {
                       const suffix = duplicateNameSuffix.trim();
                       if (!suffix) {
-                        setCreateMessage({ type: "error", text: "Enter a city name, number, or nickname in the box above." });
+                        setCreateMessage({ type: "error", text: "Indtast et bynavn, nummer eller kaldenavn i feltet ovenfor." });
                         return;
                       }
                       if (!createPhotoFile) {
-                        setCreateMessage({ type: "error", text: "A photo of your child is required." });
+                        setCreateMessage({ type: "error", text: "Et billede af dit barn er påkrævet." });
                         return;
                       }
                       const surnameWithSuffix = `${createSurname.trim()} ${suffix}`;
@@ -922,16 +922,16 @@ export default function ParentPage() {
                     }}
                     disabled={createSubmitting || !createPhotoFile}
                     className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 disabled:opacity-50"
-                    title={!createPhotoFile ? "Upload a photo first" : undefined}
+                    title={!createPhotoFile ? "Upload et billede først" : undefined}
                   >
-                    Accept and create
+                    Acceptér og opret
                   </button>
                 </div>
               </div>
             )}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Surveillance level
+                Overvågningsniveau
               </label>
               <div className="space-y-2">
                 <label className="flex items-start gap-3 p-3 rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer">
@@ -945,8 +945,8 @@ export default function ParentPage() {
                     className="mt-0.5"
                   />
                   <div className="flex-1">
-                    <div className="font-medium text-sm text-gray-900">Strict</div>
-                    <div className="text-xs text-gray-600">Access to your child's chats and pictures</div>
+                    <div className="font-medium text-sm text-gray-900">Streng</div>
+                    <div className="text-xs text-gray-600">Adgang til dit barns chats og billeder</div>
                   </div>
                 </label>
                 <label className="flex items-start gap-3 p-3 rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer">
@@ -961,7 +961,7 @@ export default function ParentPage() {
                   />
                   <div className="flex-1">
                     <div className="font-medium text-sm text-gray-900">Medium</div>
-                    <div className="text-xs text-gray-600">Notifications when explicit language is used (and then access to the chat)</div>
+                    <div className="text-xs text-gray-600">Notifikationer når eksplicit sprog bruges (og derefter adgang til chatten)</div>
                   </div>
                 </label>
                 <label className="flex items-start gap-3 p-3 rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer">
@@ -976,7 +976,7 @@ export default function ParentPage() {
                   />
                   <div className="flex-1">
                     <div className="font-medium text-sm text-gray-900">Mild</div>
-                    <div className="text-xs text-gray-600">Only receive messages when your child flags a bad message</div>
+                    <div className="text-xs text-gray-600">Modtag kun beskeder når dit barn flagger en dårlig besked</div>
                   </div>
                 </label>
               </div>
@@ -986,14 +986,14 @@ export default function ParentPage() {
               disabled={createSubmitting || !createPhotoFile}
               className="w-full rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {createSubmitting ? "Creating…" : "Create child account"}
+              {createSubmitting ? "Opretter…" : "Opret børnekonto"}
             </button>
           </form>
           {invitationLink && (
             <div className="mt-4 rounded-lg border border-green-200 bg-green-50 p-3">
-              <p className="text-sm font-medium text-green-800 mb-2">Invitation link for your child</p>
+              <p className="text-sm font-medium text-green-800 mb-2">Invitationslink til dit barn</p>
               <p className="text-xs text-green-700 mb-2">
-                Share this link with your child. They open it, enter their PIN, and can start using the app.
+                Del dette link med dit barn. De åbner det, indtaster deres PIN, og kan begynde at bruge appen.
               </p>
               <div className="flex gap-2">
                 <input
@@ -1006,11 +1006,11 @@ export default function ParentPage() {
                   type="button"
                   onClick={() => {
                     navigator.clipboard.writeText(invitationLink);
-                    setCreateMessage({ type: "success", text: "Link copied to clipboard." });
+                    setCreateMessage({ type: "success", text: "Link kopieret til udklipsholder." });
                   }}
                   className="rounded-lg bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-700"
                 >
-                  Copy link
+                  Kopiér link
                 </button>
               </div>
             </div>
@@ -1030,20 +1030,20 @@ export default function ParentPage() {
               onClick={() => setShowLinkByEmail(!showLinkByEmail)}
               className="text-blue-600 hover:underline"
             >
-              {showLinkByEmail ? "Hide" : "Link an existing account by email"}
+              {showLinkByEmail ? "Skjul" : "Tilknyt en eksisterende konto via email"}
             </button>
           </p>
           {showLinkByEmail && (
             <form onSubmit={handleLinkChild} className="mt-3 flex flex-wrap items-end gap-2 pt-3 border-t border-gray-100">
               <label htmlFor="parent-link-email" className="sr-only">
-                Child&apos;s email
+                Barnets email
               </label>
               <input
                 id="parent-link-email"
                 type="email"
                 value={linkEmail}
                 onChange={(e) => setLinkEmail(e.target.value)}
-                placeholder="child@example.com"
+                placeholder="barn@eksempel.dk"
                 disabled={linkSubmitting}
                 className="flex-1 min-w-[200px] rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100"
               />
@@ -1052,7 +1052,7 @@ export default function ParentPage() {
                 disabled={linkSubmitting}
                 className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50"
               >
-                {linkSubmitting ? "Linking…" : "Link by email"}
+                {linkSubmitting ? "Tilknytter…" : "Tilknyt via email"}
               </button>
             </form>
           )}
@@ -1068,9 +1068,9 @@ export default function ParentPage() {
 
         {links.length === 0 ? (
           <section className="rounded-xl border border-gray-200 bg-white p-8 text-center">
-            <p className="text-gray-500 mb-2">No children yet.</p>
+            <p className="text-gray-500 mb-2">Ingen børn endnu.</p>
             <p className="text-sm text-gray-400">
-              Create a child account above (username + PIN). They can then log in on the Child login page.
+              Opret en børnekonto ovenfor (fornavn + efternavn + PIN). De kan derefter logge ind på Barn login siden.
             </p>
           </section>
         ) : (
@@ -1094,7 +1094,7 @@ export default function ParentPage() {
                       <Link
                         href={`/parent/children/${link.child_id}`}
                         className="flex items-center gap-3 min-w-0 flex-1 hover:bg-gray-50 focus:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 transition rounded-lg -mx-2 px-2"
-                        aria-label={`View chats for ${label}`}
+                        aria-label={`Se chats for ${label}`}
                       >
                         {child?.avatar_url ? (
                           <img
@@ -1116,13 +1116,13 @@ export default function ParentPage() {
                               surveillanceLevel === "mild" ? "bg-green-100 text-green-700" :
                               "bg-gray-100 text-gray-700"
                             }`}>
-                              {surveillanceLevel === "strict" ? "Strict" :
+                              {surveillanceLevel === "strict" ? "Streng" :
                                surveillanceLevel === "medium" ? "Medium" :
-                               surveillanceLevel === "mild" ? "Mild" : "Unknown"}
+                               surveillanceLevel === "mild" ? "Mild" : "Ukendt"}
                             </span>
                           </div>
                         </div>
-                        <span className="text-sm text-gray-500 flex-shrink-0 ml-auto">View chats →</span>
+                        <span className="text-sm text-gray-500 flex-shrink-0 ml-auto">Se chats →</span>
                       </Link>
                     ) : (
                       <div className="flex items-center gap-3 min-w-0 flex-1">
@@ -1153,12 +1153,12 @@ export default function ParentPage() {
                           </div>
                           <p className="text-xs text-gray-500 mt-0.5">
                             {(surveillanceLevel as string) === "strict" 
-                              ? "Full access to chats and pictures"
+                              ? "Fuld adgang til chats og billeder"
                               : (surveillanceLevel as string) === "medium" 
-                              ? "Access only after keyword notification"
+                              ? "Adgang kun efter nøgleordsnotifikation"
                               : (surveillanceLevel as string) === "mild"
-                              ? "Access only when child flags a message"
-                              : "Unknown surveillance level"}
+                              ? "Adgang kun når barnet flagger en besked"
+                              : "Ukendt overvågningsniveau"}
                           </p>
                         </div>
                       </div>
@@ -1172,9 +1172,9 @@ export default function ParentPage() {
                         }}
                         disabled={updatingSurveillanceLevel === link.child_id}
                         className="text-xs rounded-lg border border-gray-300 bg-white px-2 py-1 text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
-                        aria-label={`Change surveillance level for ${label}`}
+                        aria-label={`Skift overvågningsniveau for ${label}`}
                       >
-                        <option value="strict">Strict</option>
+                        <option value="strict">Streng</option>
                         <option value="medium">Medium</option>
                         <option value="mild">Mild</option>
                       </select>
@@ -1187,16 +1187,16 @@ export default function ParentPage() {
                         }}
                         disabled={deletingChildId === link.child_id}
                         className="flex-shrink-0 rounded-lg border border-red-300 bg-white px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                        aria-label={`Delete account for ${label}`}
-                        title={`Delete account for ${label}`}
+                        aria-label={`Slet konto for ${label}`}
+                        title={`Slet konto for ${label}`}
                       >
-                        {deletingChildId === link.child_id ? "Deleting…" : "Delete account"}
+                        {deletingChildId === link.child_id ? "Sletter…" : "Slet konto"}
                       </button>
                     </div>
                   </div>
                   {friends.length > 0 && (
                     <div className="mt-2 ml-[52px]">
-                      <p className="text-xs text-gray-500 mb-1.5">Friends ({friends.length}):</p>
+                      <p className="text-xs text-gray-500 mb-1.5">Venner ({friends.length}):</p>
                       <div className="flex flex-wrap gap-1.5">
                         {friends.map((friend) => (
                           <div

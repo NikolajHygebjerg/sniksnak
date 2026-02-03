@@ -1044,7 +1044,7 @@ export default function ChatDetailPage() {
   /** Phase 6: insert flag and call moderation API placeholder */
   async function handleFlag(messageId: string) {
     if (!user) return;
-    const reason = window.prompt("Reason for flagging (optional):");
+    const reason = window.prompt("Grund til flagning (valgfrit):");
     if (reason === null) return;
     setFlaggingMessageId(messageId);
     setError(null);
@@ -1091,9 +1091,9 @@ export default function ChatDetailPage() {
       <main
         className="min-h-screen flex items-center justify-center p-4 sm:p-6"
         role="status"
-        aria-label="Loading chat"
+        aria-label="Indlæser chat"
       >
-        <p className="text-gray-500">Loading…</p>
+        <p className="text-gray-500">Indlæser…</p>
       </main>
     );
   }
@@ -1103,14 +1103,14 @@ export default function ChatDetailPage() {
       <main className="min-h-screen p-4 sm:p-6">
         <div className="max-w-2xl mx-auto">
           <p className="text-red-600" role="alert">
-            {error ?? "Not found"}
+            {error ?? "Ikke fundet"}
           </p>
-          <Link
-            href="/chats"
-            className="mt-4 inline-block text-sm text-blue-600 hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500 rounded"
-          >
-            ← Back to chats
-          </Link>
+            <Link
+              href="/chats"
+              className="mt-4 inline-block text-sm text-blue-600 hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500 rounded"
+            >
+              ← Tilbage til chats
+            </Link>
         </div>
       </main>
     );
@@ -1120,13 +1120,13 @@ export default function ChatDetailPage() {
     <main className="min-h-screen flex flex-col bg-white safe-area-inset">
       <div className="max-w-2xl mx-auto w-full flex flex-col flex-1 min-h-0">
         <header className="flex-shrink-0 flex items-center gap-3 sm:gap-4 px-4 py-3 sm:py-4 border-b border-gray-200 bg-white safe-area-inset-top">
-          <Link
-            href="/chats"
-            className="text-sm text-gray-500 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded min-w-[44px] min-h-[44px] inline-flex items-center justify-center touch-manipulation"
-            aria-label="Back to chats"
-          >
-            ← Chats
-          </Link>
+            <Link
+              href="/chats"
+              className="text-sm text-gray-500 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded min-w-[44px] min-h-[44px] inline-flex items-center justify-center touch-manipulation"
+              aria-label="Tilbage til chats"
+            >
+              ← Chats
+            </Link>
           {/* AVATAR VISNING I CHAT HEADER */}
           {/* Hvis den anden bruger har uploadet et avatar-billede (avatar_url findes), vises det */}
           {otherUser?.avatar_url ? (
@@ -1160,7 +1160,7 @@ export default function ChatDetailPage() {
             </h1>
             {otherTyping && (
               <p className="text-xs text-gray-500 mt-0.5" aria-live="polite">
-                typing…
+                skriver…
               </p>
             )}
           </div>
@@ -1174,7 +1174,7 @@ export default function ChatDetailPage() {
         >
           {messages.length === 0 && (
             <p className="text-center text-gray-400 text-sm py-4">
-              No messages yet. Say hi!
+              Ingen beskeder endnu. Sig hej!
             </p>
           )}
           {messages
@@ -1230,7 +1230,7 @@ export default function ChatDetailPage() {
                       </a>
                       {isFlagged && (
                         <div className="px-2 py-1 bg-amber-50 border-t border-amber-200">
-                          <p className="text-xs text-amber-800 font-medium">🚩 Flagged Image</p>
+                          <p className="text-xs text-amber-800 font-medium">🚩 Flagget billede</p>
                           {flags.length > 0 && flags[0].reason && (
                             <p className="text-xs text-amber-700 mt-0.5">{flags[0].reason}</p>
                           )}
@@ -1244,7 +1244,7 @@ export default function ChatDetailPage() {
                       rel="noopener noreferrer"
                       className="text-sm underline break-all"
                     >
-                      Attachment
+                      Vedhæftet fil
                     </a>
                   ) : null}
                   {(msg.content ?? "").trim() ? (
@@ -1270,12 +1270,12 @@ export default function ChatDetailPage() {
                       className="text-xs px-2 py-1 rounded border border-gray-300 bg-white/80 hover:bg-white disabled:opacity-50 text-gray-700"
                       aria-label={isFlagged ? "Message flagged" : "Flag message"}
                     >
-                      {flaggingMessageId === msg.id ? "…" : isFlagged ? "🚩 Flagged" : "Flag"}
+                      {flaggingMessageId === msg.id ? "…" : isFlagged ? "🚩 Flagget" : "Flag"}
                     </button>
                   </div>
                   {isFlagged && (
                     <div className="text-xs text-amber-700 mt-1" role="status">
-                      <p>Flagged: {flags.map((f) => f.reason || "No reason").join("; ")}</p>
+                      <p>Flagget: {flags.map((f) => f.reason || "Ingen grund").join("; ")}</p>
                       {/* Show reviewed/override button for parents - check if user has parent links */}
                       {user && parentLinks && (
                         <button
@@ -1339,7 +1339,7 @@ export default function ChatDetailPage() {
                           className="mt-1 text-xs px-2 py-1 rounded border border-amber-300 bg-white hover:bg-amber-50 text-amber-800"
                           aria-label="Clear flag (reviewed)"
                         >
-                          ✓ Reviewed - Clear Flag
+                          ✓ Gennemgået - Fjern flag
                         </button>
                       )}
                     </div>
@@ -1353,7 +1353,7 @@ export default function ChatDetailPage() {
                       disabled={invitationActionId !== null}
                       className="flex-1 rounded-lg border-2 border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50 transition"
                     >
-                      {invitationActionId === parentInvitation.id ? "…" : "Reject"}
+                      {invitationActionId === parentInvitation.id ? "…" : "Afvis"}
                     </button>
                     <button
                       type="button"
@@ -1361,7 +1361,7 @@ export default function ChatDetailPage() {
                       disabled={invitationActionId !== null}
                       className="flex-1 rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-50 transition shadow-md"
                     >
-                      {invitationActionId === parentInvitation.id ? "…" : "Accept"}
+                      {invitationActionId === parentInvitation.id ? "…" : "Acceptér"}
                     </button>
                   </div>
                 )}
@@ -1468,7 +1468,7 @@ export default function ChatDetailPage() {
               setTyping(true);
             }}
             onBlur={() => setTyping(false)}
-            placeholder="Type a message…"
+            placeholder="Skriv en besked…"
             disabled={sending}
             className="flex-1 rounded-xl border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 min-h-[44px]"
             aria-label="Message input"
@@ -1477,7 +1477,7 @@ export default function ChatDetailPage() {
             type="submit"
             disabled={sending || !content.trim()}
             className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none min-h-[44px]"
-            aria-label="Send message"
+            aria-label="Send besked"
           >
             Send
           </button>

@@ -320,7 +320,7 @@ export default function NewChatPage() {
   if (loading || !user) {
     return (
       <main className="min-h-screen flex items-center justify-center p-6">
-        <p className="text-gray-500">Loading…</p>
+        <p className="text-gray-500">Indlæser…</p>
       </main>
     );
   }
@@ -336,16 +336,16 @@ export default function NewChatPage() {
     <main className="min-h-screen p-6">
       <div className="max-w-2xl mx-auto">
         <div className="flex items-center justify-between mb-4">
-          <h1 className="text-2xl font-semibold">Find Chat-friends</h1>
+          <h1 className="text-2xl font-semibold">Find chat-venner</h1>
           <Link
             href="/chats"
             className="text-sm text-blue-600 hover:underline"
           >
-            ← Back to chats
+            ← Tilbage til chats
           </Link>
         </div>
         <p className="text-gray-500 text-sm mb-4">
-          Search for other children by name, or send them an invite link so they can join and chat with you.
+          Søg efter andre børn efter navn, eller send dem et invitationslink, så de kan deltage og chatte med dig.
         </p>
 
         {error && (
@@ -361,7 +361,7 @@ export default function NewChatPage() {
             type="search"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search for children by first name or surname…"
+            placeholder="Søg efter børn efter fornavn eller efternavn…"
             className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             autoComplete="off"
           />
@@ -369,30 +369,30 @@ export default function NewChatPage() {
 
         {!searchQuery.trim() ? null : hasOtherChildren === false ? (
           <section className="rounded-xl border border-gray-200 bg-gray-50 p-6 text-center">
-            <p className="text-gray-600 mb-2">No other children found</p>
+            <p className="text-gray-600 mb-2">Ingen andre børn fundet</p>
             <p className="text-sm text-gray-500 mb-4">
-              There are no other children with active accounts in the system yet. Share the app link below so other children can join and connect with you.
+              Der er ingen andre børn med aktive konti i systemet endnu. Del app-linket nedenfor, så andre børn kan deltage og forbinde med dig.
             </p>
             <button
               type="button"
               onClick={copyAppLink}
               className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              {inviteCopied ? "Copied!" : "Copy app link to invite"}
+              {inviteCopied ? "Kopieret!" : "Kopiér app-link for at invitere"}
             </button>
           </section>
         ) : filteredUsers.length === 0 ? (
           <section className="rounded-xl border border-gray-200 bg-gray-50 p-6 text-center">
-            <p className="text-gray-600 mb-2">No matches for &quot;{searchQuery}&quot;</p>
+            <p className="text-gray-600 mb-2">Ingen resultater for &quot;{searchQuery}&quot;</p>
             <p className="text-sm text-gray-500 mb-4">
-              Try a different name, or send the app link to a friend so they can join.
+              Prøv et andet navn, eller send app-linket til en ven, så de kan deltage.
             </p>
             <button
               type="button"
               onClick={copyAppLink}
               className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              {inviteCopied ? "Copied!" : "Copy app link to invite"}
+              {inviteCopied ? "Kopieret!" : "Kopiér app-link for at invitere"}
             </button>
           </section>
         ) : (
@@ -416,9 +416,9 @@ export default function NewChatPage() {
                     <span className="font-medium text-gray-900 truncate">{displayName(u)}</span>
                   </span>
                   {creating === u.id ? (
-                    <span className="text-sm text-gray-500">Sending…</span>
+                    <span className="text-sm text-gray-500">Sender…</span>
                   ) : (
-                    <span className="text-sm text-blue-600">Be friend</span>
+                    <span className="text-sm text-blue-600">Bliv ven</span>
                   )}
                 </button>
               </li>
@@ -427,9 +427,9 @@ export default function NewChatPage() {
         )}
 
         <section className="mt-6 rounded-xl border border-gray-200 bg-gray-50 p-4">
-          <p className="text-sm font-medium text-gray-700 mb-1">Invite a friend</p>
+          <p className="text-sm font-medium text-gray-700 mb-1">Inviter en ven</p>
           <p className="text-sm text-gray-500 mb-3">
-            Can&apos;t find someone? Share the app link so they can join. Then search for their name to send them a friend request.
+            Kan du ikke finde nogen? Del app-linket, så de kan deltage. Søg derefter efter deres navn for at sende dem en venneanmodning.
           </p>
           <div className="flex gap-2">
             <input
@@ -443,14 +443,14 @@ export default function NewChatPage() {
               onClick={copyAppLink}
               className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              {inviteCopied ? "Copied!" : "Copy link"}
+              {inviteCopied ? "Kopieret!" : "Kopiér link"}
             </button>
           </div>
         </section>
 
         <p className="mt-6">
           <Link href="/" className="text-sm text-gray-400 hover:text-gray-600">
-            ← Home
+            ← Hjem
           </Link>
         </p>
       </div>
