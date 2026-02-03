@@ -98,7 +98,7 @@ export default function GroupsPage() {
   if (loading) {
     return (
       <main className="min-h-screen flex items-center justify-center p-4 sm:p-6">
-        <p className="text-gray-500">Loading…</p>
+        <p className="text-gray-500">Indlæser…</p>
       </main>
     );
   }
@@ -109,7 +109,7 @@ export default function GroupsPage() {
         <div className="max-w-2xl mx-auto">
           <p className="text-red-600" role="alert">{error}</p>
           <Link href="/chats" className="mt-4 inline-block text-sm text-blue-600 hover:underline">
-            ← Back to chats
+            ← Tilbage til chats
           </Link>
         </div>
       </main>

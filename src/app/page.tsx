@@ -65,7 +65,7 @@ export default function Home() {
               priority
             />
           </div>
-          <p className="text-gray-500">Loading…</p>
+          <p className="text-gray-500">Indlæser…</p>
         </div>
       </main>
     );
@@ -92,7 +92,7 @@ export default function Home() {
         {/* Content */}
         <div className="space-y-6">
           <p className="text-sm text-gray-600 leading-relaxed">
-            Parents sign up with email, then create child accounts using the child&apos;s real name and a PIN. Children can only use the app if a parent created their account (no anonymous/incognito names).
+            Forældre tilmelder sig med email og opretter derefter børnekonti med barnets rigtige navn og en PIN. Børn kan kun bruge appen, hvis en forælder har oprettet deres konto (ingen anonyme navne).
           </p>
           
           <div className="flex flex-col gap-3">
@@ -100,18 +100,18 @@ export default function Home() {
               href="/login"
               className="block w-full py-3 px-4 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors shadow-md"
             >
-              Parent login
+              Forælder login
             </Link>
             <Link
               href="/child-login"
               className="block w-full py-3 px-4 rounded-lg border-2 border-[#82DDC8] bg-white text-gray-700 font-medium hover:bg-[#C2EDD8] hover:border-[#82DDC8] focus:outline-none focus:ring-2 focus:ring-[#82DDC8] focus:ring-offset-2 transition-colors"
             >
-              Child login
+              Barn login
             </Link>
           </div>
           
           <p className="text-xs text-gray-400">
-            Parents: sign up or log in with email. Children: log in with the name your parent set (your real name) and PIN.
+            Forældre: tilmeld dig eller log ind med email. Børn: log ind med det navn din forælder har sat (dit rigtige navn) og PIN.
           </p>
         </div>
       </div>

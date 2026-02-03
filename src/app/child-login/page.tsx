@@ -31,7 +31,7 @@ export default function ChildLoginPage() {
     const sn = surname.trim();
     const p = pin.trim();
     if (!fn || !sn || !p) {
-      setError("Enter your first name, surname and PIN.");
+      setError("Indtast dit fornavn, efternavn og PIN.");
       return;
     }
     setLoading(true);
@@ -46,7 +46,7 @@ export default function ChildLoginPage() {
 
     if (!res.ok) {
       setLoading(false);
-      setError(data.error ?? "Could not find your account. A parent must create it first.");
+      setError(data.error ?? "Kunne ikke finde din konto. En forælder skal oprette den først.");
       return;
     }
 
@@ -58,7 +58,7 @@ export default function ChildLoginPage() {
 
     setLoading(false);
     if (signInErr) {
-      setError(signInErr.message === "Invalid login credentials" ? "Wrong PIN." : signInErr.message);
+      setError(signInErr.message === "Invalid login credentials" ? "Forkert PIN." : signInErr.message);
       return;
     }
 
@@ -69,16 +69,16 @@ export default function ChildLoginPage() {
   return (
     <main className="min-h-screen flex flex-col items-center justify-center p-6">
       <div className="w-full max-w-sm space-y-6">
-        <h1 className="text-2xl font-semibold text-center">Chat App</h1>
+        <h1 className="text-2xl font-semibold text-center">Sniksnak Chat</h1>
         <p className="text-sm text-gray-500 text-center">
-          Log in with the first name and surname your parent set for you, and your PIN.
+          Log ind med det fornavn og efternavn din forælder har sat for dig, og din PIN.
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label htmlFor="child-firstname" className="block text-sm font-medium text-gray-700 mb-1">
-                First name
+                Fornavn
               </label>
               <input
                 id="child-firstname"
@@ -87,13 +87,13 @@ export default function ChildLoginPage() {
                 onChange={(e) => setFirstName(e.target.value)}
                 required
                 autoComplete="given-name"
-                placeholder="First name"
+                placeholder="Fornavn"
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
             <div>
               <label htmlFor="child-surname" className="block text-sm font-medium text-gray-700 mb-1">
-                Surname
+                Efternavn
               </label>
               <input
                 id="child-surname"
@@ -102,7 +102,7 @@ export default function ChildLoginPage() {
                 onChange={(e) => setSurname(e.target.value)}
                 required
                 autoComplete="family-name"
-                placeholder="Surname"
+                placeholder="Efternavn"
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
@@ -120,7 +120,7 @@ export default function ChildLoginPage() {
               minLength={4}
               maxLength={12}
               autoComplete="off"
-              placeholder="Your PIN"
+              placeholder="Din PIN"
               inputMode="numeric"
               className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
@@ -137,21 +137,21 @@ export default function ChildLoginPage() {
             disabled={loading}
             className="w-full py-2 px-4 bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700 disabled:opacity-50"
           >
-            {loading ? "Logging in…" : "Log in"}
+            {loading ? "Logger ind…" : "Log ind"}
           </button>
         </form>
 
         <p className="text-center text-sm text-gray-500">
-          No account? A parent must create one for you (first name + surname) in Parent view and share the invitation link.
+          Ingen konto? En forælder skal oprette en for dig (fornavn + efternavn) i Forældrevisning og dele invitationslinket.
         </p>
 
         <p className="text-center">
           <Link href="/" className="text-sm text-gray-400 hover:text-gray-600">
-            ← Home
+            ← Hjem
           </Link>
           {" · "}
           <Link href="/login" className="text-sm text-blue-600 hover:underline">
-            Parent login
+            Forælder login
           </Link>
         </p>
       </div>
