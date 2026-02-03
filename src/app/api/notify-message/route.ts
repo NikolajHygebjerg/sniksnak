@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         error:
-          "RESEND_API_KEY not set. Add to .env.local and run: npm install resend",
+          "RESEND_API_KEY ikke sat. Tilføj til .env.local og kør: npm install resend",
       },
       { status: 503 }
     );
@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    return NextResponse.json({ error: "Ugyldig JSON body" }, { status: 400 });
   }
 
   let recipient_email: string;
@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
     };
     if (!supabaseUrl || !supabaseServiceKey) {
       return NextResponse.json(
-        { error: "SUPABASE_SERVICE_ROLE_KEY and NEXT_PUBLIC_SUPABASE_URL required for webhook" },
+        { error: "SUPABASE_SERVICE_ROLE_KEY og NEXT_PUBLIC_SUPABASE_URL påkrævet for webhook" },
         { status: 503 }
       );
     }
@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
       .eq("id", record.chat_id)
       .single();
     if (!chat) {
-      return NextResponse.json({ error: "Chat not found" }, { status: 404 });
+      return NextResponse.json({ error: "Chat ikke fundet" }, { status: 404 });
     }
     const recipientId =
       record.sender_id === chat.user1_id ? chat.user2_id : chat.user1_id;
@@ -73,12 +73,12 @@ export async function POST(request: NextRequest) {
       .single();
     if (!recipientUser?.email) {
       return NextResponse.json(
-        { error: "Recipient user or email not found" },
+        { error: "Modtager bruger eller email ikke fundet" },
         { status: 404 }
       );
     }
     recipient_email = recipientUser.email;
-    sender_email = (senderUser?.email as string) ?? "Someone";
+    sender_email = (senderUser?.email as string) ?? "Nogen";
     content_preview = (record.content as string) ?? "";
     chat_id = record.chat_id;
   } else {
@@ -90,7 +90,7 @@ export async function POST(request: NextRequest) {
     };
     if (!r.recipient_email || !r.sender_email) {
       return NextResponse.json(
-        { error: "recipient_email and sender_email required" },
+        { error: "recipient_email og sender_email er påkrævet" },
         { status: 400 }
       );
     }
@@ -105,16 +105,16 @@ export async function POST(request: NextRequest) {
   const chatPath = chat_id ? `/chats/${chat_id}` : "/chats";
   const preview =
     content_preview.slice(0, 100) + (content_preview.length > 100 ? "…" : "") ||
-    "New message";
+    "Ny besked";
 
   const { error } = await resend.emails.send({
     from: fromEmail,
     to: recipient_email,
-    subject: `New message from ${sender_email}`,
+    subject: `Ny besked fra ${sender_email}`,
     html: `
-      <p>You have a new message from <strong>${escapeHtml(sender_email)}</strong>.</p>
+      <p>Du har modtaget en ny besked fra <strong>${escapeHtml(sender_email)}</strong>.</p>
       <p>${escapeHtml(preview)}</p>
-      <p><a href="${appUrl}${chatPath}">Open chat</a></p>
+      <p><a href="${appUrl}${chatPath}">Åbn chat</a></p>
     `,
   });
 

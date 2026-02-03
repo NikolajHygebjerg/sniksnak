@@ -10,13 +10,13 @@ const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
  */
 export async function POST(request: NextRequest) {
   if (!supabaseUrl || !anonKey) {
-    return NextResponse.json({ error: "Server configuration error" }, { status: 503 });
+    return NextResponse.json({ error: "Server konfigurationsfejl" }, { status: 503 });
   }
 
   const authHeader = request.headers.get("authorization");
   const token = authHeader?.replace("Bearer ", "").trim();
   if (!token) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ error: "Uautoriseret" }, { status: 401 });
   }
 
   // Create authenticated Supabase client with the user's access token for RLS
@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
   
   const { data: { user }, error: authErr } = await supabase.auth.getUser();
   if (authErr || !user) {
-    return NextResponse.json({ error: "Invalid or expired session" }, { status: 401 });
+    return NextResponse.json({ error: "Ugyldig eller udløbet session" }, { status: 401 });
   }
 
   try {
@@ -40,11 +40,11 @@ export async function POST(request: NextRequest) {
     console.log("Update surveillance level request:", { parentId: user.id, childId, surveillanceLevel });
 
     if (!childId || typeof childId !== "string") {
-      return NextResponse.json({ error: "childId is required" }, { status: 400 });
+      return NextResponse.json({ error: "childId er påkrævet" }, { status: 400 });
     }
 
     if (!surveillanceLevel || !["strict", "medium", "mild"].includes(surveillanceLevel)) {
-      return NextResponse.json({ error: "surveillanceLevel must be 'strict', 'medium', or 'mild'" }, { status: 400 });
+      return NextResponse.json({ error: "surveillanceLevel skal være 'strict', 'medium' eller 'mild'" }, { status: 400 });
     }
 
     // Verify the parent owns this child link
@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
     if (linkErr) {
       console.error("Error querying parent_child_links:", linkErr);
       return NextResponse.json({ 
-        error: "Error checking child link", 
+        error: "Fejl ved tjek af barn link", 
         details: linkErr.message 
       }, { status: 500 });
     }
@@ -72,8 +72,8 @@ export async function POST(request: NextRequest) {
         .eq("parent_id", user.id);
       console.log("All parent links for debugging:", allLinks);
       return NextResponse.json({ 
-        error: "Child link not found or access denied",
-        details: `No parent-child link found. Parent ID: ${user.id}, Child ID: ${childId}`
+        error: "Barn link ikke fundet eller adgang nægtet",
+        details: `Ingen forælder-barn link fundet. Forælder ID: ${user.id}, Barn ID: ${childId}`
       }, { status: 403 });
     }
 
@@ -87,7 +87,7 @@ export async function POST(request: NextRequest) {
       console.error("Error updating surveillance level:", updateErr);
       return NextResponse.json({ 
         error: updateErr.message,
-        details: "Failed to update surveillance level in database"
+        details: "Kunne ikke opdatere overvågningsniveau i databasen"
       }, { status: 500 });
     }
 
@@ -95,6 +95,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true, surveillance_level: surveillanceLevel });
   } catch (error: any) {
     console.error("Error in update-surveillance-level:", error);
-    return NextResponse.json({ error: error.message || "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: error.message || "Intern serverfejl" }, { status: 500 });
   }
 }

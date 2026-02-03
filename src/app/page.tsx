@@ -52,19 +52,16 @@ export default function Home() {
 
   if (loading) {
     return (
-      <main className="min-h-screen flex items-center justify-center p-6 bg-gradient-to-b from-[#F0FDF9] to-white">
+      <main className="min-h-screen flex items-center justify-center p-6 bg-[#C4E6CA]">
         <div className="flex flex-col items-center space-y-4">
-          <div className="relative w-32 h-32 flex items-center justify-center">
-            <div className="absolute inset-0 bg-[#C2EDD8] rounded-full animate-pulse"></div>
-            <Image 
-              src="/sniksnak-logo.png" 
-              alt="Sniksnak Chat Logo" 
-              width={112}
-              height={112}
-              className="relative object-contain opacity-80"
-              priority
-            />
-          </div>
+          <Image 
+            src="/logo.svg" 
+            alt="Sniksnak Chat Logo" 
+            width={120}
+            height={120}
+            className="w-[120px] h-[120px]"
+            priority
+          />
           <p className="text-gray-500">Indlæser…</p>
         </div>
       </main>
@@ -72,48 +69,40 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center p-6 bg-gradient-to-b from-[#F0FDF9] to-white">
-      <div className="w-full max-w-sm space-y-8 text-center">
+    <main className="min-h-screen flex flex-col items-center justify-center p-6 bg-[#C4E6CA]">
+      <div className="w-full max-w-sm flex flex-col items-center space-y-12">
         {/* Logo */}
-        <div className="flex flex-col items-center space-y-4">
-          <div className="relative w-48 h-48 flex items-center justify-center">
-            <div className="absolute inset-0 bg-[#C2EDD8] rounded-full"></div>
-            <Image 
-              src="/sniksnak-logo.png" 
-              alt="Sniksnak Chat Logo" 
-              width={160}
-              height={160}
-              className="relative object-contain"
-              priority
-            />
-          </div>
+        <div className="flex flex-col items-center">
+          <Image 
+            src="/logo.svg" 
+            alt="Sniksnak Chat Logo" 
+            width={156}
+            height={156}
+            className="w-[156px] h-[156px]"
+            priority
+          />
         </div>
 
-        {/* Content */}
-        <div className="space-y-6">
-          <p className="text-sm text-gray-600 leading-relaxed">
-            Forældre tilmelder sig med email og opretter derefter børnekonti med barnets rigtige navn og en PIN. Børn kan kun bruge appen, hvis en forælder har oprettet deres konto (ingen anonyme navne).
-          </p>
-          
-          <div className="flex flex-col gap-3">
-            <Link
-              href="/login"
-              className="block w-full py-3 px-4 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors shadow-md"
-            >
-              Forælder login
-            </Link>
-            <Link
-              href="/child-login"
-              className="block w-full py-3 px-4 rounded-lg border-2 border-[#82DDC8] bg-white text-gray-700 font-medium hover:bg-[#C2EDD8] hover:border-[#82DDC8] focus:outline-none focus:ring-2 focus:ring-[#82DDC8] focus:ring-offset-2 transition-colors"
-            >
-              Barn login
-            </Link>
-          </div>
-          
-          <p className="text-xs text-gray-400">
-            Forældre: tilmeld dig eller log ind med email. Børn: log ind med det navn din forælder har sat (dit rigtige navn) og PIN.
-          </p>
+        {/* Buttons */}
+        <div className="w-full flex flex-col gap-4">
+          <Link
+            href="/login"
+            className="block w-full py-4 px-6 rounded-lg bg-[#E0785B] text-white text-base font-medium hover:bg-[#D06A4F] focus:outline-none focus:ring-2 focus:ring-[#E0785B] focus:ring-offset-2 transition-colors text-center"
+          >
+            Forælder login
+          </Link>
+          <Link
+            href="/child-login"
+            className="block w-full py-4 px-6 rounded-lg border-2 border-[#E0785B] bg-white text-[#E0785B] text-base font-medium hover:bg-[#E2F5E6] focus:outline-none focus:ring-2 focus:ring-[#E0785B] focus:ring-offset-2 transition-colors text-center"
+          >
+            Barn login
+          </Link>
         </div>
+        
+        {/* Help text */}
+        <p className="text-xs text-gray-500 text-center leading-relaxed max-w-xs">
+          Forældre: tilmeld dig eller log ind med email. Børn: log ind med det navn din forælder har sat (dit rigtige navn) og PIN.
+        </p>
       </div>
     </main>
   );

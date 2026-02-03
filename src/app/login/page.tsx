@@ -21,6 +21,8 @@ export default function LoginPage() {
   // Parent login fields
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [parentFirstName, setParentFirstName] = useState("");
+  const [parentSurname, setParentSurname] = useState("");
   const [isSignUp, setIsSignUp] = useState(false);
   
   // Child login fields
@@ -40,12 +42,40 @@ export default function LoginPage() {
 
     try {
       if (isSignUp) {
+        const fn = parentFirstName.trim();
+        const sn = parentSurname.trim();
+        if (!fn || !sn) {
+          setError("Indtast både fornavn og efternavn.");
+          setLoading(false);
+          return;
+        }
+        if (fn.length < 2 || sn.length < 2) {
+          setError("Fornavn og efternavn skal være mindst 2 tegn.");
+          setLoading(false);
+          return;
+        }
+        
         const { data, error: err } = await supabase.auth.signUp({ email, password });
         if (err) throw err;
         if (data?.user && !data.user.identities?.length) {
           setMessage("En konto med denne email findes allerede. Log ind i stedet.");
+          setLoading(false);
           return;
         }
+        
+        // Update user profile with first_name and surname
+        if (data?.user) {
+          const { error: updateErr } = await supabase
+            .from("users")
+            .update({ first_name: fn, surname: sn })
+            .eq("id", data.user.id);
+          
+          if (updateErr) {
+            console.error("Error updating user profile:", updateErr);
+            // Continue anyway - user is created, profile update can happen later
+          }
+        }
+        
         if (data?.session) {
           router.push("/parent");
           router.refresh();
@@ -117,7 +147,7 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center p-6">
+    <main className="min-h-screen flex flex-col items-center justify-center p-6 bg-[#C4E6CA]">
       <div className="w-full max-w-sm space-y-6">
         <h1 className="text-2xl font-semibold text-center">Sniksnak Chat</h1>
         
@@ -132,7 +162,7 @@ export default function LoginPage() {
             }}
             className={`flex-1 py-2 text-sm font-medium transition-colors ${
               mode === "parent"
-                ? "border-b-2 border-blue-600 text-blue-600"
+                ? "border-b-2 border-[#E0785B] text-[#E0785B]"
                 : "text-gray-500 hover:text-gray-700"
             }`}
           >
@@ -147,7 +177,7 @@ export default function LoginPage() {
             }}
             className={`flex-1 py-2 text-sm font-medium transition-colors ${
               mode === "child"
-                ? "border-b-2 border-blue-600 text-blue-600"
+                ? "border-b-2 border-[#E0785B] text-[#E0785B]"
                 : "text-gray-500 hover:text-gray-700"
             }`}
           >
@@ -162,6 +192,40 @@ export default function LoginPage() {
             </p>
 
             <form onSubmit={handleParentSubmit} className="space-y-4">
+              {isSignUp && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label htmlFor="parent-firstname" className="block text-sm font-medium text-gray-700 mb-1">
+                      Fornavn
+                    </label>
+                    <input
+                      id="parent-firstname"
+                      type="text"
+                      value={parentFirstName}
+                      onChange={(e) => setParentFirstName(e.target.value)}
+                      required={isSignUp}
+                      autoComplete="given-name"
+                      minLength={2}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md bg-[#E2F5E6] focus:outline-none focus:ring-2 focus:ring-[#E0785B]"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="parent-surname" className="block text-sm font-medium text-gray-700 mb-1">
+                      Efternavn
+                    </label>
+                    <input
+                      id="parent-surname"
+                      type="text"
+                      value={parentSurname}
+                      onChange={(e) => setParentSurname(e.target.value)}
+                      required={isSignUp}
+                      autoComplete="family-name"
+                      minLength={2}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md bg-[#E2F5E6] focus:outline-none focus:ring-2 focus:ring-[#E0785B]"
+                    />
+                  </div>
+                </div>
+              )}
               <div>
                 <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
                   Email
@@ -173,7 +237,7 @@ export default function LoginPage() {
                   onChange={(e) => setEmail(e.target.value)}
                   required
                   autoComplete="email"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md bg-[#E2F5E6] focus:outline-none focus:ring-2 focus:ring-[#E0785B]"
                 />
               </div>
               <div>
@@ -188,7 +252,7 @@ export default function LoginPage() {
                   required
                   minLength={6}
                   autoComplete={isSignUp ? "new-password" : "current-password"}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md bg-[#E2F5E6] focus:outline-none focus:ring-2 focus:ring-[#E0785B]"
                 />
               </div>
 
@@ -206,7 +270,7 @@ export default function LoginPage() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full py-2 px-4 bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700 disabled:opacity-50"
+                className="w-full py-2 px-4 bg-[#E0785B] text-white font-medium rounded-md hover:bg-[#D06A4F] disabled:opacity-50"
               >
                 {loading ? "…" : isSignUp ? "Tilmeld dig" : "Log ind"}
               </button>
@@ -220,8 +284,13 @@ export default function LoginPage() {
                   setIsSignUp(!isSignUp);
                   setError(null);
                   setMessage(null);
+                  if (!isSignUp) {
+                    // Reset parent name fields when switching to signup
+                    setParentFirstName("");
+                    setParentSurname("");
+                  }
                 }}
-                className="text-blue-600 hover:underline"
+                className="text-[#E0785B] hover:underline"
               >
                 {isSignUp ? "Log ind" : "Tilmeld dig"}
               </button>
@@ -247,7 +316,7 @@ export default function LoginPage() {
                     required
                     autoComplete="given-name"
                     placeholder="Fornavn"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md bg-[#E2F5E6] focus:outline-none focus:ring-2 focus:ring-[#E0785B]"
                   />
                 </div>
                 <div>
@@ -262,7 +331,7 @@ export default function LoginPage() {
                     required
                     autoComplete="family-name"
                     placeholder="Efternavn"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md bg-[#E2F5E6] focus:outline-none focus:ring-2 focus:ring-[#E0785B]"
                   />
                 </div>
               </div>
@@ -281,7 +350,7 @@ export default function LoginPage() {
                   autoComplete="off"
                   placeholder="Din PIN"
                   inputMode="numeric"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md bg-[#E2F5E6] focus:outline-none focus:ring-2 focus:ring-[#E0785B]"
                 />
               </div>
 
@@ -299,7 +368,7 @@ export default function LoginPage() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full py-2 px-4 bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700 disabled:opacity-50"
+                className="w-full py-2 px-4 bg-[#E0785B] text-white font-medium rounded-md hover:bg-[#D06A4F] disabled:opacity-50"
               >
                 {loading ? "Logger ind…" : "Log ind"}
               </button>

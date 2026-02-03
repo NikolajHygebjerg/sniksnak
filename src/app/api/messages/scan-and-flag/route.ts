@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
       body = await request.json();
     } catch (parseError) {
       console.error("⚠️ [Keyword Scanner] Failed to parse request body:", parseError);
-      return NextResponse.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "Ugyldig JSON" }, { status: 400 });
     }
 
     const { messageId, childId, messageText, chatId } = body || {};
@@ -24,7 +24,7 @@ export async function POST(request: NextRequest) {
     // Validate input
     if (!messageId || !childId || typeof messageText !== "string") {
       console.error("⚠️ [Keyword Scanner] Invalid input:", { messageId, childId, messageText, chatId });
-      return NextResponse.json({ ok: false, error: "Invalid input" }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "Ugyldigt input" }, { status: 400 });
     }
 
     // Scan the message

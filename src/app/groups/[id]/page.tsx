@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter, useParams } from "next/navigation";
+import { useRouter, useParams, usePathname } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { supabase } from "@/lib/supabase";
 import type { User } from "@supabase/supabase-js";
 
@@ -52,9 +53,11 @@ type GroupInvitation = {
 
 export default function GroupDetailPage() {
   const router = useRouter();
+  const pathname = usePathname();
   const params = useParams();
   const groupId = params?.id as string | undefined;
   const [user, setUser] = useState<User | null>(null);
+  const [isChild, setIsChild] = useState(false);
   const [group, setGroup] = useState<Group | null>(null);
   const [members, setMembers] = useState<GroupMember[]>([]);
   const [friends, setFriends] = useState<Friend[]>([]);
@@ -80,6 +83,17 @@ export default function GroupDetailPage() {
         }
 
         setUser(session.user);
+
+        // Check if user is a child
+        const { data: userData } = await supabase
+          .from("users")
+          .select("is_child")
+          .eq("id", session.user.id)
+          .maybeSingle();
+        
+        if (!cancelled) {
+          setIsChild(userData?.is_child ?? false);
+        }
 
         // Load group details
         const { data: { session: sessionForApi } } = await supabase.auth.getSession();
@@ -109,7 +123,7 @@ export default function GroupDetailPage() {
         const foundGroup = groupData.group as Group;
 
         if (!foundGroup) {
-          setError("Group not found or you don't have access");
+          setError("Gruppe ikke fundet eller du har ikke adgang");
           setLoading(false);
           return;
         }
@@ -264,6 +278,14 @@ export default function GroupDetailPage() {
     }
   }
 
+  const isActive = (path: string) => pathname === path;
+
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    router.replace("/login");
+    router.refresh();
+  }
+
   async function handleAcceptInvitation(invitationId: string) {
     if (!user || acceptingInvitationId) return;
 
@@ -314,7 +336,7 @@ export default function GroupDetailPage() {
 
   if (loading) {
     return (
-      <main className="min-h-screen flex items-center justify-center p-4 sm:p-6">
+      <main className="min-h-screen flex items-center justify-center p-4 sm:p-6 bg-[#C4E6CA]">
         <p className="text-gray-500">Loading…</p>
       </main>
     );
@@ -322,11 +344,11 @@ export default function GroupDetailPage() {
 
   if (error && !group) {
     return (
-      <main className="min-h-screen p-4 sm:p-6">
+      <main className="min-h-screen p-4 sm:p-6 bg-[#C4E6CA]">
         <div className="max-w-2xl mx-auto">
           <p className="text-red-600" role="alert">{error}</p>
-          <Link href="/groups" className="mt-4 inline-block text-sm text-blue-600 hover:underline">
-            ← Back to groups
+          <Link href="/groups" className="mt-4 inline-block text-sm text-[#E0785B] hover:underline">
+            ← Tilbage til grupper
           </Link>
         </div>
       </main>
@@ -338,13 +360,13 @@ export default function GroupDetailPage() {
   const isAdmin = group.role === "admin";
 
   return (
-    <main className="min-h-screen p-4 sm:p-6 safe-area-inset">
+    <main className="min-h-screen p-4 sm:p-6 safe-area-inset bg-[#C4E6CA] pb-20">
       <div className="max-w-2xl mx-auto">
         <header className="flex items-center gap-4 mb-6">
           <Link
             href="/groups"
-            className="text-sm text-gray-500 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded min-w-[44px] min-h-[44px] inline-flex items-center justify-center touch-manipulation"
-            aria-label="Back to groups"
+            className="text-sm text-gray-500 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#E0785B] rounded min-w-[44px] min-h-[44px] inline-flex items-center justify-center touch-manipulation"
+            aria-label="Tilbage til grupper"
           >
             ← Grupper
           </Link>
@@ -367,7 +389,7 @@ export default function GroupDetailPage() {
           >
             {group.name[0]?.toUpperCase() || "G"}
           </span>
-          <h1 className="text-xl sm:text-2xl font-semibold">{group.name}</h1>
+          <h1 className="text-2xl font-semibold" style={{ fontFamily: 'Arial, sans-serif' }}>{group.name}</h1>
         </header>
 
         {error && (
@@ -378,7 +400,7 @@ export default function GroupDetailPage() {
 
         {/* Pending invitations section */}
         {pendingInvitations.length > 0 && (
-          <section className="rounded-xl border border-blue-200 bg-blue-50 p-4 sm:p-6 mb-6">
+          <section className="rounded-xl border border-gray-200 bg-[#E2F5E6] p-4 sm:p-6 mb-6">
             <h2 className="text-sm font-semibold text-gray-700 mb-3">Invitationer</h2>
             <div className="space-y-2">
               {pendingInvitations.map((invitation) => (
@@ -394,7 +416,7 @@ export default function GroupDetailPage() {
                   <button
                     onClick={() => handleAcceptInvitation(invitation.id)}
                     disabled={acceptingInvitationId === invitation.id}
-                    className="ml-3 text-sm font-medium text-blue-600 hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded px-3 py-1.5 bg-blue-50 hover:bg-blue-100 disabled:opacity-50 min-h-[44px] inline-flex items-center justify-center"
+                    className="ml-3 text-sm font-medium text-[#E0785B] hover:text-[#D06A4F] focus:outline-none focus:ring-2 focus:ring-[#E0785B] rounded px-3 py-1.5 bg-[#E2F5E6] hover:bg-white disabled:opacity-50 min-h-[44px] inline-flex items-center justify-center"
                   >
                     {acceptingInvitationId === invitation.id ? "Accepterer…" : "Accepter"}
                   </button>
@@ -410,13 +432,13 @@ export default function GroupDetailPage() {
         </div>
 
         {/* Members section */}
-        <section className="rounded-xl border border-gray-200 bg-white p-4 sm:p-6 mb-6">
+        <section className="rounded-xl border border-gray-200 bg-[#E2F5E6] p-4 sm:p-6 mb-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-sm font-semibold text-gray-700">Medlemmer ({members.length})</h2>
             {isAdmin && (
               <button
                 onClick={() => setShowInviteModal(true)}
-                className="text-sm font-medium text-blue-600 hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded px-3 py-1.5 min-h-[44px] inline-flex items-center justify-center"
+                className="text-sm font-medium text-[#E0785B] hover:text-[#D06A4F] focus:outline-none focus:ring-2 focus:ring-[#E0785B] rounded px-3 py-1.5 min-h-[44px] inline-flex items-center justify-center"
               >
                 + Inviter ven
               </button>
@@ -427,7 +449,7 @@ export default function GroupDetailPage() {
             {members.map((member) => (
               <div
                 key={member.id}
-                className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50"
+                className="flex items-center gap-3 p-2 rounded-lg hover:bg-white"
               >
                 {member.user.avatar_url ? (
                   <img
@@ -471,7 +493,7 @@ export default function GroupDetailPage() {
             />
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
               <div
-                className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden"
+                className="bg-[#E2F5E6] rounded-2xl shadow-xl w-full max-w-md overflow-hidden"
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="p-4 border-b border-gray-200">
@@ -489,7 +511,7 @@ export default function GroupDetailPage() {
                           key={friend.id}
                           onClick={() => handleInviteFriend(friend.id)}
                           disabled={invitingFriendId === friend.id}
-                          className="w-full flex items-center gap-3 p-3 text-left rounded-xl hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors disabled:opacity-50"
+                          className="w-full flex items-center gap-3 p-3 text-left rounded-xl hover:bg-white focus:outline-none focus:ring-2 focus:ring-[#E0785B] transition-colors disabled:opacity-50"
                         >
                           {friend.avatar_url ? (
                             <img
@@ -518,7 +540,7 @@ export default function GroupDetailPage() {
                           {invitingFriendId === friend.id ? (
                             <span className="text-sm text-gray-500">Inviterer…</span>
                           ) : (
-                            <span className="text-sm text-blue-600">Inviter</span>
+                            <span className="text-sm text-[#E0785B]">Inviter</span>
                           )}
                         </button>
                       ))}
@@ -528,7 +550,7 @@ export default function GroupDetailPage() {
                 <div className="p-4 border-t border-gray-200">
                   <button
                     onClick={() => setShowInviteModal(false)}
-                    className="w-full px-4 py-3 text-center font-medium text-gray-700 hover:bg-gray-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors min-h-[44px]"
+                    className="w-full px-4 py-3 text-center font-medium text-gray-700 hover:bg-white rounded-xl focus:outline-none focus:ring-2 focus:ring-[#E0785B] transition-colors min-h-[44px]"
                   >
                     Luk
                   </button>
@@ -538,6 +560,49 @@ export default function GroupDetailPage() {
           </>
         )}
       </div>
+
+      {/* Bottom Navigation Bar - Only for children */}
+      {isChild && (
+        <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 safe-area-inset-bottom z-50">
+          <div className="max-w-2xl mx-auto flex items-center justify-around px-2 py-2">
+            <Link
+              href="/chats"
+              className={`flex flex-col items-center justify-center px-3 py-2 min-h-[60px] min-w-[60px] rounded-lg transition-colors ${
+                isActive("/chats") ? "text-[#E0785B]" : "text-gray-400"
+              }`}
+              aria-label="Chat"
+            >
+              <Image src="/chaticon.svg" alt="" width={48} height={48} className="w-12 h-12" />
+            </Link>
+            <Link
+              href="/groups"
+              className={`flex flex-col items-center justify-center px-3 py-2 min-h-[60px] min-w-[60px] rounded-lg transition-colors ${
+                isActive("/groups") ? "text-[#E0785B]" : "text-gray-400"
+              }`}
+              aria-label="Grupper"
+            >
+              <Image src="/groupsicon.svg" alt="" width={67} height={67} className="w-[67px] h-[67px]" />
+            </Link>
+            <Link
+              href="/chats/new"
+              className={`flex flex-col items-center justify-center px-3 py-2 min-h-[60px] min-w-[60px] rounded-lg transition-colors ${
+                isActive("/chats/new") ? "text-[#E0785B]" : "text-gray-400"
+              }`}
+              aria-label="Find venner"
+            >
+              <Image src="/findfriends.svg" alt="" width={48} height={48} className="w-12 h-12" />
+            </Link>
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="flex flex-col items-center justify-center px-3 py-2 min-h-[60px] min-w-[60px] rounded-lg transition-colors text-gray-400 hover:text-[#E0785B] focus:outline-none focus:ring-2 focus:ring-[#E0785B]"
+              aria-label="Indstillinger"
+            >
+              <Image src="/logout.svg" alt="" width={48} height={48} className="w-12 h-12" />
+            </button>
+          </div>
+        </nav>
+      )}
     </main>
   );
 }
@@ -577,7 +642,7 @@ function GroupChatButton({ groupId }: { groupId: string }) {
     <button
       onClick={handleOpenChat}
       disabled={chatLoading}
-      className="block w-full rounded-xl border border-blue-300 bg-blue-600 px-4 py-3 text-center text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition min-h-[44px] disabled:opacity-50"
+      className="block w-full rounded-xl border border-[#E0785B] bg-[#E0785B] px-4 py-3 text-center text-sm font-medium text-white hover:bg-[#D06A4F] focus:outline-none focus:ring-2 focus:ring-[#E0785B] focus:ring-offset-2 transition min-h-[44px] disabled:opacity-50"
     >
       {chatLoading ? "Åbner…" : "Åbn gruppe chat"}
     </button>

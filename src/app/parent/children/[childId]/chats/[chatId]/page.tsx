@@ -6,8 +6,9 @@
  * Flagged messages are visually indicated for parents/admins.
  */
 import { useEffect, useState, useRef } from "react";
-import { useRouter, useParams } from "next/navigation";
+import { useRouter, useParams, usePathname } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { supabase } from "@/lib/supabase";
 import type { User } from "@supabase/supabase-js";
 
@@ -43,6 +44,7 @@ type FlagRow = {
 
 export default function ParentChatDetailPage() {
   const router = useRouter();
+  const pathname = usePathname();
   const params = useParams();
   const childId = params?.childId as string | undefined;
   const chatId = params?.chatId as string | undefined;
@@ -56,6 +58,8 @@ export default function ParentChatDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [flaggingMessageId, setFlaggingMessageId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const isActive = (path: string) => pathname === path;
 
   useEffect(() => {
     if (!chatId || !childId) {
@@ -110,7 +114,7 @@ export default function ParentChatDetailPage() {
         .maybeSingle();
 
       if (chatErr || !chatData) {
-        if (!cancelled) setError(chatErr?.message ?? "Chat not found");
+        if (!cancelled) setError(chatErr?.message ?? "Chat ikke fundet");
         setLoading(false);
         return;
       }
@@ -197,7 +201,7 @@ export default function ParentChatDetailPage() {
 
   async function handleFlag(messageId: string) {
     if (!user) return;
-    const reason = window.prompt("Reason for flagging (optional):");
+    const reason = window.prompt("Grund til flagning (valgfrit):");
     if (reason === null) return;
     setFlaggingMessageId(messageId);
     setError(null);
@@ -231,7 +235,7 @@ export default function ParentChatDetailPage() {
 
   if (loading || !chatId || !childId) {
     return (
-      <main className="min-h-screen flex items-center justify-center p-6" role="status">
+      <main className="min-h-screen flex items-center justify-center p-6 bg-[#E0785B]" role="status">
         <p className="text-gray-500">Loading…</p>
       </main>
     );
@@ -239,11 +243,11 @@ export default function ParentChatDetailPage() {
 
   if (!user || error) {
     return (
-      <main className="min-h-screen p-6">
+      <main className="min-h-screen p-6 bg-[#E0785B]">
         <div className="max-w-2xl mx-auto">
-          <p className="text-red-600" role="alert">{error ?? "Not found"}</p>
+          <p className="text-red-600" role="alert">{error ?? "Ikke fundet"}</p>
           <Link href={`/parent/children/${childId}`} className="mt-4 inline-block text-sm text-blue-600 hover:underline">
-            ← Back to chats
+            ← Tilbage til chats
           </Link>
         </div>
       </main>
@@ -251,12 +255,16 @@ export default function ParentChatDetailPage() {
   }
 
   return (
-    <main className="min-h-screen flex flex-col bg-white">
+    <main className="min-h-screen flex flex-col bg-[#E0785B] pb-20">
       <div className="max-w-2xl mx-auto w-full flex flex-col flex-1 min-h-0">
-        <header className="flex-shrink-0 flex items-center gap-4 px-4 py-3 border-b border-gray-200 bg-white">
+        {/* Logo */}
+        <div className="flex-shrink-0 flex justify-center mb-4 px-4 pt-6">
+          <Image src="/logo.svg" alt="Sniksnak Chat" width={156} height={156} className="w-[156px] h-[156px]" />
+        </div>
+        <header className="flex-shrink-0 flex items-center gap-4 px-4 py-3 border-b border-gray-200 bg-[#E2F5E6]">
           <Link
             href={`/parent/children/${childId}`}
-            className="text-sm text-gray-500 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded min-w-[44px] min-h-[44px] inline-flex items-center justify-center"
+            className="text-sm text-gray-500 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#E0785B] rounded min-w-[44px] min-h-[44px] inline-flex items-center justify-center"
             aria-label="Back to chats"
           >
             ← Chats
@@ -296,7 +304,7 @@ export default function ParentChatDetailPage() {
                       ? "ring-2 ring-amber-500 bg-amber-50 dark:bg-amber-900/20"
                       : isChild
                         ? "bg-gray-200 text-gray-900 rounded-bl-md"
-                        : "bg-blue-100 text-blue-900 rounded-br-md"
+                        : "bg-[#E2F5E6] text-gray-900 rounded-br-md"
                   }`}
                 >
                   {isImage && msg.attachment_url ? (
@@ -320,7 +328,7 @@ export default function ParentChatDetailPage() {
                       type="button"
                       onClick={() => handleFlag(msg.id)}
                       disabled={flaggingMessageId === msg.id}
-                      className="text-xs px-2 py-1 rounded border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-50"
+                      className="text-xs px-2 py-1 rounded border border-gray-300 bg-white hover:bg-[#E2F5E6] disabled:opacity-50"
                       aria-label={`Flag this message${isFlagged ? " (already flagged)" : ""}`}
                     >
                       {flaggingMessageId === msg.id ? "…" : isFlagged ? "🚩 Flagged" : "Flag"}
@@ -338,6 +346,48 @@ export default function ParentChatDetailPage() {
           <div ref={messagesEndRef} />
         </div>
       </div>
+
+      {/* Bottom Navigation Bar for Parents */}
+      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 safe-area-inset-bottom z-50">
+        <div className="max-w-2xl mx-auto flex items-center justify-around px-2 py-2">
+          <Link
+            href="/parent"
+            className={`flex flex-col items-center justify-center px-3 py-2 min-h-[60px] min-w-[60px] rounded-lg transition-colors ${
+              isActive("/parent") ? "text-[#E0785B]" : "text-gray-400"
+            }`}
+            aria-label="Chat"
+          >
+            <Image src="/chaticon.svg" alt="" width={48} height={48} className="w-12 h-12" />
+          </Link>
+          <Link
+            href="/parent/create-child"
+            className={`flex flex-col items-center justify-center px-3 py-2 min-h-[60px] min-w-[60px] rounded-lg transition-colors ${
+              isActive("/parent/create-child") ? "text-[#E0785B]" : "text-gray-400"
+            }`}
+            aria-label="Opret barn"
+          >
+            <Image src="/parentcontrol.svg" alt="" width={48} height={48} className="w-12 h-12" />
+          </Link>
+          <Link
+            href="/parent/children"
+            className={`flex flex-col items-center justify-center px-3 py-2 min-h-[60px] min-w-[60px] rounded-lg transition-colors ${
+              isActive("/parent/children") ? "text-[#E0785B]" : "text-gray-400"
+            }`}
+            aria-label="Mine børn"
+          >
+            <Image src="/children.svg" alt="" width={48} height={48} className="w-12 h-12" />
+          </Link>
+          <Link
+            href="/parent/settings"
+            className={`flex flex-col items-center justify-center px-3 py-2 min-h-[60px] min-w-[60px] rounded-lg transition-colors ${
+              isActive("/parent/settings") ? "text-[#E0785B]" : "text-gray-400"
+            }`}
+            aria-label="Indstillinger"
+          >
+            <Image src="/Settings.svg" alt="" width={48} height={48} className="w-12 h-12" />
+          </Link>
+        </div>
+      </nav>
     </main>
   );
 }

@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { supabase } from "@/lib/supabase";
 import type { User } from "@supabase/supabase-js";
 
@@ -18,10 +19,20 @@ type Group = {
 
 export default function GroupsPage() {
   const router = useRouter();
+  const pathname = usePathname();
   const [user, setUser] = useState<User | null>(null);
   const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isChild, setIsChild] = useState(false);
+
+  const isActive = (path: string) => pathname === path;
+
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    router.push("/");
+    router.refresh();
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -47,10 +58,14 @@ export default function GroupsPage() {
 
         if (cancelled) return;
 
-        if (!ownUser?.username || ownUser.username.trim() === "") {
+        const isChildUser = !!(ownUser?.username != null && String(ownUser.username).trim() !== "");
+        if (!isChildUser) {
           // Not a child - redirect to parent view
           router.replace("/parent");
           return;
+        }
+        if (!cancelled) {
+          setIsChild(true);
         }
 
         // Load groups
@@ -117,32 +132,24 @@ export default function GroupsPage() {
   }
 
   return (
-    <main className="min-h-screen p-4 sm:p-6 safe-area-inset">
+    <main className="min-h-screen p-4 sm:p-6 safe-area-inset bg-[#C4E6CA] pb-20">
       <div className="max-w-2xl mx-auto">
-        <header className="flex items-center justify-between gap-4 mb-6">
-          <h1 className="text-xl sm:text-2xl font-semibold">Grupper</h1>
-          <nav className="flex items-center gap-3 sm:gap-4">
-            <Link
-              href="/chats"
-              className="text-sm font-medium text-gray-600 hover:text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded-lg px-2 py-1 min-h-[44px] min-w-[44px] inline-flex items-center justify-center"
-            >
-              Chats
-            </Link>
-            <Link
-              href="/groups/new"
-              className="text-sm font-medium text-blue-600 hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded-lg px-3 py-2 bg-blue-50 hover:bg-blue-100 min-h-[44px] inline-flex items-center justify-center"
-            >
-              + Opret gruppe
-            </Link>
-          </nav>
+        <header className="flex items-center justify-between gap-4 mb-4">
+          <h1 className="text-2xl font-semibold" style={{ fontFamily: 'Arial, sans-serif' }}>Grupper</h1>
+          <Link
+            href="/groups/new"
+            className="text-sm font-medium text-[#E0785B] hover:text-[#D06A4F] focus:outline-none focus:ring-2 focus:ring-[#E0785B] focus:ring-offset-2 rounded-lg px-3 py-2 bg-[#E2F5E6] hover:bg-white min-h-[44px] inline-flex items-center justify-center"
+          >
+            + Opret gruppe
+          </Link>
         </header>
 
         {groups.length === 0 ? (
-          <div className="rounded-xl border border-gray-200 bg-gray-50 p-8 text-center">
+          <div className="rounded-xl border border-gray-200 bg-[#E2F5E6] p-8 text-center">
             <p className="text-gray-600 mb-4">Du er ikke medlem af nogen grupper endnu.</p>
             <Link
               href="/groups/new"
-              className="inline-block text-sm font-medium text-blue-600 hover:text-blue-700 bg-white px-4 py-2 rounded-lg border border-blue-200 hover:bg-blue-50 min-h-[44px] inline-flex items-center justify-center"
+              className="inline-block text-sm font-medium text-[#E0785B] hover:text-[#D06A4F] bg-white px-4 py-2 rounded-lg border border-[#E0785B] hover:bg-[#E2F5E6] min-h-[44px] inline-flex items-center justify-center"
             >
               Opret din første gruppe
             </Link>
@@ -153,7 +160,7 @@ export default function GroupsPage() {
               <Link
                 key={group.id}
                 href={`/groups/${group.id}`}
-                className="block rounded-xl border border-gray-200 bg-white p-4 hover:bg-gray-50 focus:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 transition touch-manipulation"
+                className="block rounded-xl border border-gray-200 bg-[#E2F5E6] p-4 hover:bg-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-inset focus:ring-[#E0785B] transition touch-manipulation"
               >
                 <div className="flex items-center gap-4">
                   {group.avatar_url ? (
@@ -188,6 +195,49 @@ export default function GroupsPage() {
           </div>
         )}
       </div>
+
+      {/* Bottom Navigation Bar - Only for children */}
+      {isChild && (
+        <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 safe-area-inset-bottom z-50">
+          <div className="max-w-2xl mx-auto flex items-center justify-around px-2 py-2">
+            <Link
+              href="/chats"
+              className={`flex flex-col items-center justify-center px-3 py-2 min-h-[60px] min-w-[60px] rounded-lg transition-colors ${
+                isActive("/chats") ? "text-[#E0785B]" : "text-gray-400"
+              }`}
+              aria-label="Chat"
+            >
+              <Image src="/chaticon.svg" alt="" width={48} height={48} className="w-12 h-12" />
+            </Link>
+            <Link
+              href="/groups"
+              className={`flex flex-col items-center justify-center px-3 py-2 min-h-[60px] min-w-[60px] rounded-lg transition-colors ${
+                isActive("/groups") ? "text-[#E0785B]" : "text-gray-400"
+              }`}
+              aria-label="Grupper"
+            >
+              <Image src="/groupsicon.svg" alt="" width={67} height={67} className="w-[67px] h-[67px]" />
+            </Link>
+            <Link
+              href="/chats/new"
+              className={`flex flex-col items-center justify-center px-3 py-2 min-h-[60px] min-w-[60px] rounded-lg transition-colors ${
+                isActive("/chats/new") ? "text-[#E0785B]" : "text-gray-400"
+              }`}
+              aria-label="Find venner"
+            >
+              <Image src="/findfriends.svg" alt="" width={48} height={48} className="w-12 h-12" />
+            </Link>
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="flex flex-col items-center justify-center px-3 py-2 min-h-[60px] min-w-[60px] rounded-lg transition-colors text-gray-400 hover:text-[#E0785B] focus:outline-none focus:ring-2 focus:ring-[#E0785B]"
+              aria-label="Indstillinger"
+            >
+              <Image src="/logout.svg" alt="" width={48} height={48} className="w-12 h-12" />
+            </button>
+          </div>
+        </nav>
+      )}
     </main>
   );
 }

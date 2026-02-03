@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback } from "react";
-import { useRouter, useParams } from "next/navigation";
+import { useRouter, useParams, usePathname } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { supabase } from "@/lib/supabase";
 import type { User } from "@supabase/supabase-js";
 
@@ -36,9 +37,11 @@ const BUCKET = "chat-media";
 
 export default function GroupChatPage() {
   const router = useRouter();
+  const pathname = usePathname();
   const params = useParams();
   const groupId = params?.id as string | undefined;
   const [user, setUser] = useState<User | null>(null);
+  const [isChild, setIsChild] = useState(false);
   const [group, setGroup] = useState<Group | null>(null);
   const [chatId, setChatId] = useState<string | null>(null);
   const [messages, setMessages] = useState<MessageWithSender[]>([]);
@@ -68,6 +71,17 @@ export default function GroupChatPage() {
 
         setUser(session.user);
 
+        // Check if user is a child
+        const { data: userData } = await supabase
+          .from("users")
+          .select("is_child")
+          .eq("id", session.user.id)
+          .maybeSingle();
+        
+        if (!cancelled) {
+          setIsChild(userData?.is_child ?? false);
+        }
+
         // Verify user is a member of the group
         const { data: membership } = await supabase
           .from("group_members")
@@ -94,7 +108,7 @@ export default function GroupChatPage() {
         if (cancelled) return;
 
         if (!groupData) {
-          setError("Group not found");
+          setError("Gruppe ikke fundet");
           setLoading(false);
           return;
         }
@@ -232,6 +246,14 @@ export default function GroupChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  const isActive = (path: string) => pathname === path;
+
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    router.replace("/login");
+    router.refresh();
+  }
+
   async function handleSend(e: React.FormEvent) {
     e.preventDefault();
     if (!chatId || !content.trim() || sending || !user) return;
@@ -360,8 +382,8 @@ export default function GroupChatPage() {
       <main className="min-h-screen p-4 sm:p-6">
         <div className="max-w-2xl mx-auto">
           <p className="text-red-600" role="alert">{error}</p>
-          <Link href="/groups" className="mt-4 inline-block text-sm text-blue-600 hover:underline">
-            ← Back to groups
+          <Link href="/groups" className="mt-4 inline-block text-sm text-[#E0785B] hover:underline">
+            ← Tilbage til grupper
           </Link>
         </div>
       </main>
@@ -371,13 +393,13 @@ export default function GroupChatPage() {
   if (!group || !chatId) return null;
 
   return (
-    <main className="min-h-screen flex flex-col bg-white safe-area-inset">
+    <main className="min-h-screen flex flex-col bg-[#C4E6CA] safe-area-inset pb-20">
       <div className="max-w-2xl mx-auto w-full flex flex-col flex-1 min-h-0">
-        <header className="flex-shrink-0 flex items-center gap-3 sm:gap-4 px-4 py-3 sm:py-4 border-b border-gray-200 bg-white safe-area-inset-top">
+        <header className="flex-shrink-0 flex items-center gap-3 sm:gap-4 px-4 py-3 sm:py-4 border-b border-gray-200 bg-[#E2F5E6] safe-area-inset-top">
           <Link
             href={`/groups/${groupId}`}
-            className="text-sm text-gray-500 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded min-w-[44px] min-h-[44px] inline-flex items-center justify-center touch-manipulation"
-            aria-label="Back to group"
+            className="text-sm text-gray-500 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#E0785B] rounded min-w-[44px] min-h-[44px] inline-flex items-center justify-center touch-manipulation"
+            aria-label="Tilbage til gruppe"
           >
             ← Gruppe
           </Link>
@@ -437,8 +459,8 @@ export default function GroupChatPage() {
                 )}
                 <div className={`max-w-[85%] sm:max-w-[75%] rounded-2xl px-3 py-2 ${
                   isMe
-                    ? "bg-blue-600 text-white rounded-br-md"
-                    : "bg-gray-200 text-gray-900 rounded-bl-md"
+                    ? "bg-[#E0785B] text-white rounded-br-md"
+                    : "bg-[#E2F5E6] text-gray-900 rounded-bl-md"
                 }`}>
                   {!isMe && (
                     <p className="text-xs font-medium text-gray-600 mb-1">
@@ -476,7 +498,7 @@ export default function GroupChatPage() {
                     </p>
                   ) : null}
                   <p className={`text-xs mt-1 ${
-                    isMe ? "text-blue-200" : "text-gray-500"
+                    isMe ? "text-white/80" : "text-gray-500"
                   }`}>
                     {new Date(msg.created_at).toLocaleTimeString([], {
                       hour: "2-digit",
@@ -492,7 +514,7 @@ export default function GroupChatPage() {
 
         <form
           onSubmit={handleSend}
-          className="flex-shrink-0 flex gap-2 p-3 sm:p-4 border-t border-gray-200 bg-gray-50 safe-area-inset-bottom"
+          className="flex-shrink-0 flex gap-2 p-3 sm:p-4 border-t border-gray-200 bg-[#E2F5E6] safe-area-inset-bottom"
         >
           {/* Hidden file inputs */}
           <input
@@ -516,7 +538,7 @@ export default function GroupChatPage() {
             type="button"
             onClick={handleOpenImagePicker}
             disabled={uploading}
-            className="flex-shrink-0 rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-600 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 min-h-[44px] min-w-[44px] flex items-center justify-center"
+            className="flex-shrink-0 rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-600 hover:bg-[#E2F5E6] focus:outline-none focus:ring-2 focus:ring-[#E0785B] disabled:opacity-50 min-h-[44px] min-w-[44px] flex items-center justify-center"
             aria-label="Attach image"
             title="Attach image"
           >
@@ -533,7 +555,7 @@ export default function GroupChatPage() {
               />
               <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
                 <div
-                  className="bg-white rounded-t-2xl sm:rounded-2xl shadow-xl w-full max-w-sm overflow-hidden"
+                  className="bg-[#E2F5E6] rounded-t-2xl sm:rounded-2xl shadow-xl w-full max-w-sm overflow-hidden"
                   onClick={(e) => e.stopPropagation()}
                 >
                   <div className="p-4 border-b border-gray-200">
@@ -544,7 +566,7 @@ export default function GroupChatPage() {
                     <button
                       type="button"
                       onClick={handleSelectFromGallery}
-                      className="w-full flex items-center gap-3 px-4 py-3 text-left rounded-xl hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+                      className="w-full flex items-center gap-3 px-4 py-3 text-left rounded-xl hover:bg-white focus:outline-none focus:ring-2 focus:ring-[#E0785B] transition-colors"
                     >
                       <span className="text-2xl">🖼️</span>
                       <div className="flex-1">
@@ -597,6 +619,49 @@ export default function GroupChatPage() {
           </button>
         </form>
       </div>
+
+      {/* Bottom Navigation Bar - Only for children */}
+      {isChild && (
+        <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 safe-area-inset-bottom z-50">
+          <div className="max-w-2xl mx-auto flex items-center justify-around px-2 py-2">
+            <Link
+              href="/chats"
+              className={`flex flex-col items-center justify-center px-3 py-2 min-h-[60px] min-w-[60px] rounded-lg transition-colors ${
+                isActive("/chats") ? "text-[#E0785B]" : "text-gray-400"
+              }`}
+              aria-label="Chat"
+            >
+              <Image src="/chaticon.svg" alt="" width={48} height={48} className="w-12 h-12" />
+            </Link>
+            <Link
+              href="/groups"
+              className={`flex flex-col items-center justify-center px-3 py-2 min-h-[60px] min-w-[60px] rounded-lg transition-colors ${
+                isActive("/groups") ? "text-[#E0785B]" : "text-gray-400"
+              }`}
+              aria-label="Grupper"
+            >
+              <Image src="/groupsicon.svg" alt="" width={67} height={67} className="w-[67px] h-[67px]" />
+            </Link>
+            <Link
+              href="/chats/new"
+              className={`flex flex-col items-center justify-center px-3 py-2 min-h-[60px] min-w-[60px] rounded-lg transition-colors ${
+                isActive("/chats/new") ? "text-[#E0785B]" : "text-gray-400"
+              }`}
+              aria-label="Find venner"
+            >
+              <Image src="/findfriends.svg" alt="" width={48} height={48} className="w-12 h-12" />
+            </Link>
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="flex flex-col items-center justify-center px-3 py-2 min-h-[60px] min-w-[60px] rounded-lg transition-colors text-gray-400 hover:text-[#E0785B] focus:outline-none focus:ring-2 focus:ring-[#E0785B]"
+              aria-label="Indstillinger"
+            >
+              <Image src="/logout.svg" alt="" width={48} height={48} className="w-12 h-12" />
+            </button>
+          </div>
+        </nav>
+      )}
     </main>
   );
 }

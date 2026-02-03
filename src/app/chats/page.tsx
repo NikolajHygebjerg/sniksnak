@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState, useRef, useMemo } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { supabase } from "@/lib/supabase";
 import type { User } from "@supabase/supabase-js";
 
@@ -51,6 +52,7 @@ type ChatRead = {
 
 export default function ChatsPage() {
   const router = useRouter();
+  const pathname = usePathname();
   const [user, setUser] = useState<User | null>(null);
   const [chats, setChats] = useState<Chat[]>([]);
   const [usersById, setUsersById] = useState<Record<string, UserRow>>({});
@@ -68,8 +70,11 @@ export default function ChatsPage() {
   const [isChild, setIsChild] = useState(false);
   const [friends, setFriends] = useState<UserRow[]>([]);
   const [storedParentLinks, setStoredParentLinks] = useState<Array<{child_id: string, surveillance_level: string}> | null>(null);
+  const [currentUserData, setCurrentUserData] = useState<UserRow | null>(null);
   const userRef = useRef<string | null>(null);
   const chatIdsRef = useRef<Set<string>>(new Set());
+
+  const isActive = (path: string) => pathname === path;
 
   userRef.current = user?.id ?? null;
   chatIdsRef.current = new Set(chats.map((c) => c.id));
@@ -174,7 +179,11 @@ export default function ChatsPage() {
       setUser(session.user);
       const uid = session.user.id;
 
-      const { data: ownUser, error: ownUserError } = await supabase.from("users").select("username").eq("id", uid).maybeSingle();
+      const { data: ownUser, error: ownUserError } = await supabase
+        .from("users")
+        .select("username, first_name, surname, avatar_url")
+        .eq("id", uid)
+        .maybeSingle();
       if (ownUserError) {
         // Safe error logging
         try {
@@ -188,15 +197,32 @@ export default function ChatsPage() {
         }
       }
       const isChildUser = !!(ownUser?.username != null && String(ownUser.username).trim() !== "");
-      if (!cancelled) {
-        setIsChild(isChildUser);
-      }
-
+      
       // Check if user is a parent
       const { data: parentLinks } = await supabase
         .from("parent_child_links")
         .select("child_id, surveillance_level")
         .eq("parent_id", uid);
+
+      // Redirect parents to /parent (parent chat page)
+      if (!cancelled && parentLinks && parentLinks.length > 0 && !isChildUser) {
+        router.replace("/parent");
+        return;
+      }
+
+      if (!cancelled) {
+        setIsChild(isChildUser);
+        if (ownUser) {
+          setCurrentUserData({
+            id: uid,
+            email: session.user.email || "",
+            username: ownUser.username,
+            first_name: ownUser.first_name,
+            surname: ownUser.surname,
+            avatar_url: ownUser.avatar_url,
+          });
+        }
+      }
       
       let chatsData;
       let chatsErr;
@@ -700,139 +726,89 @@ export default function ChatsPage() {
   }
 
   return (
-    <main className="min-h-screen p-4 sm:p-6 flex flex-col safe-area-inset">
-      <div className="max-w-2xl mx-auto w-full flex flex-col min-h-0">
-        <header className="flex-shrink-0 flex flex-wrap items-center justify-between gap-3 mb-4 sm:mb-6">
-          <h1 className="text-xl sm:text-2xl font-semibold">Chats</h1>
-          <div className="flex items-center gap-3 sm:gap-4 flex-wrap">
-            <span className="text-sm text-gray-500 truncate max-w-[140px] sm:max-w-none" title={user.email ?? undefined}>
-              {user.email}
+    <main className="min-h-screen flex flex-col safe-area-inset bg-[#C4E6CA] pb-20" style={{ fontFamily: 'Arial, sans-serif' }}>
+      <div className="max-w-2xl mx-auto w-full flex flex-col min-h-0 px-4 py-6">
+        {/* Logo */}
+        <div className="flex-shrink-0 flex justify-center mb-4">
+          <Image src="/logo.svg" alt="Sniksnak Chat" width={156} height={156} className="w-[156px] h-[156px]" />
+        </div>
+
+        {/* Current User Avatar and First Name - Only for children */}
+        {isChild && currentUserData && (
+          <div className="flex-shrink-0 flex flex-col items-center mb-6">
+            {currentUserData.avatar_url ? (
+              <img
+                src={currentUserData.avatar_url}
+                alt={`${currentUserData.first_name || currentUserData.username || 'User'}'s avatar`}
+                className="h-[83px] w-[83px] rounded-full object-cover bg-gray-200 mb-2"
+                onError={(e) => {
+                  const target = e.target as HTMLImageElement;
+                  target.style.display = 'none';
+                  const fallback = target.nextElementSibling as HTMLElement;
+                  if (fallback) fallback.style.display = 'flex';
+                }}
+              />
+            ) : null}
+            <span
+              className={`h-[83px] w-[83px] rounded-full bg-gray-300 flex items-center justify-center text-gray-600 text-2xl font-medium mb-2 ${currentUserData.avatar_url ? 'hidden' : ''}`}
+              aria-hidden="true"
+            >
+              {(currentUserData.first_name || currentUserData.username || 'U')[0].toUpperCase()}
             </span>
-            {!isChild && (
-              <Link
-                href="/parent"
-                className="text-sm font-medium text-gray-600 hover:text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded-lg px-2 py-1 min-h-[44px] min-w-[44px] inline-flex items-center justify-center"
-                aria-label="Forældrevisning"
-              >
-                Forældrevisning
-              </Link>
-            )}
-            <Link
-              href="/chats/new"
-              className="text-sm font-medium text-blue-600 hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded-lg px-2 py-1 min-h-[44px] min-w-[44px] inline-flex items-center justify-center"
-              aria-label="Find chat-venner"
-            >
-              Find chat-venner
-            </Link>
-            {isChild && (
-              <Link
-                href="/groups"
-                className="text-sm font-medium text-blue-600 hover:text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded-lg px-2 py-1 min-h-[44px] min-w-[44px] inline-flex items-center justify-center"
-                aria-label="Grupper"
-              >
-                Grupper
-              </Link>
-            )}
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="text-sm text-blue-600 hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded px-2 py-1 min-h-[44px] min-w-[44px] inline-flex items-center justify-center"
-              aria-label="Log ud"
-            >
-              Log ud
-            </button>
+            <span className="text-lg font-semibold text-gray-900" style={{ fontFamily: 'Arial, sans-serif' }}>
+              {currentUserData.first_name || currentUserData.username || 'User'}
+            </span>
           </div>
-        </header>
+        )}
+
+        {/* Header for parents */}
+        {!isChild && (
+          <header className="flex-shrink-0 flex flex-wrap items-center justify-between gap-3 mb-4">
+            <h1 className="text-2xl font-semibold" style={{ fontFamily: 'Arial, sans-serif' }}>Chats</h1>
+            <Link
+              href="/parent"
+              className="text-sm font-medium text-gray-600 hover:text-gray-800 focus:outline-none focus:ring-2 focus:ring-[#E0785B] focus:ring-offset-2 rounded-lg px-2 py-1 min-h-[44px] min-w-[44px] inline-flex items-center justify-center"
+              aria-label="Forældrevisning"
+            >
+              Forældrevisning
+            </Link>
+          </header>
+        )}
 
         {error && (
-          <p className="mb-4 text-sm text-red-600" role="alert">
+          <p className="mb-4 text-sm text-red-600" role="alert" style={{ fontFamily: 'Arial, sans-serif' }}>
             {error}
           </p>
         )}
 
-        {isChild && (
-          <section className="mb-4 rounded-xl border border-gray-200 bg-white p-4" aria-label="Friends">
-            <h2 className="text-sm font-semibold text-gray-700 mb-3">
-              Mine venner {friends.length > 0 && `(${friends.length})`}
-            </h2>
-            {friends.length > 0 ? (
-              <div className="flex flex-wrap gap-2">
-                {friends.map((friend) => {
-                  const label = otherUserLabel(friend);
-                  return (
-                    <div
-                      key={friend.id}
-                      className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2"
-                    >
-                      {/* AVATAR VISNING FOR VENNER */}
-                      {/* Hvis vennen har uploadet et avatar-billede (avatar_url findes), vises det */}
-                      {friend.avatar_url ? (
-                        <img 
-                          src={friend.avatar_url} 
-                          alt={`${label}'s avatar`} 
-                          className="h-6 w-6 rounded-full object-cover bg-gray-200"
-                          onError={(e) => {
-                            // Hvis billedet ikke kan indlæses, skjul img og vis standard-avatar i stedet
-                            const target = e.target as HTMLImageElement;
-                            target.style.display = 'none';
-                            // Find næste sibling (standard-avatar span) og vis den
-                            const fallback = target.nextElementSibling as HTMLElement;
-                            if (fallback) fallback.style.display = 'flex';
-                          }}
-                        />
-                      ) : null}
-                      {/* Standard-avatar: Vises hvis avatar_url ikke findes i databasen */}
-                      {/* Skjules automatisk hvis avatar_url findes, men vises igen hvis billedet ikke kan indlæses (via onError) */}
-                      <span 
-                        className={`h-6 w-6 rounded-full bg-gray-300 flex items-center justify-center text-xs font-medium text-gray-600 ${friend.avatar_url ? 'hidden' : ''}`}
-                        aria-hidden="true"
-                      >
-                        {label.slice(0, 1).toUpperCase()}
-                      </span>
-                      <span className="text-sm font-medium text-gray-800">{label}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <p className="text-sm text-gray-500">Ingen venner endnu. Din forælder skal godkende forbindelser først.</p>
-            )}
-          </section>
-        )}
-
-        {chats.length === 0 ? (
-          <section
-            className="rounded-xl border border-gray-200 bg-gray-50 p-6 sm:p-8 text-center flex-1 flex flex-col items-center justify-center"
-            aria-label={isChild ? "No Chat-friends yet" : "No chats"}
-          >
-            {isChild ? (
-              <>
-                <p className="text-lg font-medium text-gray-800 mb-2">Du har ingen chat-venner endnu</p>
-                <p className="text-gray-500 mb-4 max-w-sm">
-                  Forbind med andre børn ved at søge efter deres navn eller ved at sende dem en invitation til at deltage i appen.
-                </p>
-                <Link
-                  href="/chats/new"
-                  className="inline-block rounded-lg bg-blue-600 px-4 py-3 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 min-h-[44px] inline-flex items-center justify-center"
-                >
-                  Find chat-venner
-                </Link>
-              </>
-            ) : (
-              <>
-                <p className="text-lg font-medium text-gray-800 mb-2">Ingen chats endnu</p>
-                <p className="text-gray-500 mb-4 max-w-sm">
-                  Dine chats med andre forældre vil vises her. Du modtager en chat, når et andet forældres barn vil forbinde med dit barn.
-                </p>
-              </>
-            )}
-          </section>
-        ) : (
-          <ul
-            className="divide-y divide-gray-200 rounded-xl border border-gray-200 bg-white flex-1 min-h-0 overflow-auto"
-            role="list"
-            aria-label="Chat list"
-          >
+        {/* Chat List Box - Only for children */}
+        {isChild ? (
+          chats.length === 0 ? (
+            <section
+              className="rounded-3xl border border-gray-200 bg-white p-6 sm:p-8 text-center flex-1 flex flex-col items-center justify-center min-h-[400px]"
+              aria-label="No Chat-friends yet"
+              style={{ fontFamily: 'Arial, sans-serif' }}
+            >
+              <p className="text-lg font-medium text-gray-800 mb-2" style={{ fontFamily: 'Arial, sans-serif' }}>Du har ingen chat-venner endnu</p>
+              <p className="text-gray-500 mb-4 max-w-sm" style={{ fontFamily: 'Arial, sans-serif' }}>
+                Forbind med andre børn ved at søge efter deres navn eller ved at sende dem en invitation til at deltage i appen.
+              </p>
+              <Link
+                href="/chats/new"
+                className="inline-block rounded-lg bg-[#E0785B] px-4 py-3 text-sm font-medium text-white hover:bg-[#D06A4F] focus:outline-none focus:ring-2 focus:ring-[#E0785B] focus:ring-offset-2 min-h-[44px] inline-flex items-center justify-center"
+                style={{ fontFamily: 'Arial, sans-serif' }}
+              >
+                Find chat-venner
+              </Link>
+            </section>
+          ) : (
+            <div className="flex-1 min-h-0 flex flex-col">
+              <ul
+                className="rounded-3xl border border-gray-200 bg-[#E2F5E6] flex-1 min-h-0 overflow-y-auto"
+                role="list"
+                aria-label="Chat list"
+                style={{ fontFamily: 'Arial, sans-serif' }}
+              >
             {sortedChats.map((chat) => {
               // Determine the other user in the chat
               // For parents viewing children's chats, show the other child (not their own child)
@@ -859,69 +835,56 @@ export default function ChatsPage() {
               const label = otherUserLabel(other);
               const lastMsg = lastMessageByChat[chat.id];
               const unread = getUnreadCount(chat.id);
-              const date = lastMsg
-                ? new Date(lastMsg.created_at)
-                : new Date(chat.created_at);
-              const dateStr =
-                date.toDateString() === new Date().toDateString()
-                  ? date.toLocaleTimeString([], {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })
-                  : date.toLocaleDateString();
-                const preview = lastMsg
+              const preview = lastMsg
                 ? lastMsg.content?.trim() || "Vedhæftet fil"
                 : "Ingen beskeder endnu";
 
+              // Get first name for display
+              const firstName = other?.first_name?.trim() || other?.username?.trim() || label;
+
               return (
-                <li key={chat.id} role="listitem">
+                <li key={chat.id} role="listitem" className="border-b border-gray-200 last:border-b-0">
                   <Link
                     href={`/chats/${chat.id}`}
-                    className="flex items-center gap-3 sm:gap-4 px-4 py-3 sm:py-3.5 hover:bg-gray-50 focus:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 transition touch-manipulation"
-                    aria-label={`Chat with ${label}${unread > 0 ? `, ${unread} unread` : ""}`}
+                    className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 focus:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-[#E0785B] transition touch-manipulation"
+                    aria-label={`Chat with ${firstName}${unread > 0 ? `, ${unread} unread` : ""}`}
                   >
-                    {/* AVATAR VISNING I CHATLISTEN */}
-                    {/* Hvis den anden bruger har uploadet et avatar-billede (avatar_url findes), vises det */}
+                    {/* Other child's avatar */}
                     {other?.avatar_url ? (
                       <img 
                         src={other.avatar_url} 
-                        alt={`${label}'s avatar`} 
-                        className="h-10 w-10 flex-shrink-0 rounded-full object-cover bg-gray-200"
+                        alt={`${firstName}'s avatar`} 
+                        className="h-12 w-12 flex-shrink-0 rounded-full object-cover bg-gray-200"
                         onError={(e) => {
-                          // Hvis billedet ikke kan indlæses, skjul img og vis standard-avatar i stedet
                           const target = e.target as HTMLImageElement;
                           target.style.display = 'none';
-                          // Find næste sibling (standard-avatar span) og vis den
                           const fallback = target.nextElementSibling as HTMLElement;
                           if (fallback) fallback.style.display = 'flex';
                         }}
                       />
                     ) : null}
-                    {/* Standard-avatar: Vises hvis avatar_url ikke findes i databasen */}
-                    {/* Skjules automatisk hvis avatar_url findes, men vises igen hvis billedet ikke kan indlæses (via onError) */}
                     <span 
-                      className={`h-10 w-10 flex-shrink-0 rounded-full bg-gray-200 flex items-center justify-center text-gray-500 text-sm font-medium ${other?.avatar_url ? 'hidden' : ''}`}
+                      className={`h-12 w-12 flex-shrink-0 rounded-full bg-gray-200 flex items-center justify-center text-gray-500 text-base font-medium ${other?.avatar_url ? 'hidden' : ''}`}
                       aria-hidden="true"
+                      style={{ fontFamily: 'Arial, sans-serif' }}
                     >
-                      {label.slice(0, 1).toUpperCase()}
+                      {firstName[0].toUpperCase()}
                     </span>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="font-medium text-gray-900 truncate">
-                          {label}
-                        </span>
-                        <span className="text-sm text-gray-500 flex-shrink-0">
-                          {dateStr}
+                      <div className="mb-1">
+                        <span className="font-bold text-gray-900 truncate block" style={{ fontFamily: 'Arial, sans-serif' }}>
+                          {firstName}
                         </span>
                       </div>
-                      <p className="text-sm text-gray-500 truncate mt-0.5">
+                      <p className="text-sm text-gray-600 truncate" style={{ fontFamily: 'Arial, sans-serif', fontWeight: 'normal' }}>
                         {preview}
                       </p>
                     </div>
                     {unread > 0 && (
                       <span
-                        className="flex-shrink-0 rounded-full bg-blue-600 text-white text-xs font-medium min-w-[22px] h-[22px] inline-flex items-center justify-center px-1.5"
+                        className="flex-shrink-0 rounded-full bg-[#E0785B] text-white text-xs font-medium min-w-[22px] h-[22px] inline-flex items-center justify-center px-1.5"
                         aria-label={`${unread} unread`}
+                        style={{ fontFamily: 'Arial, sans-serif' }}
                       >
                         {unread > 99 ? "99+" : unread}
                       </span>
@@ -930,18 +893,163 @@ export default function ChatsPage() {
                 </li>
               );
             })}
-          </ul>
+              </ul>
+            </div>
+          )
+        ) : (
+          /* Parent view - keep original layout */
+          chats.length === 0 ? (
+            <section
+              className="rounded-xl border border-gray-200 bg-[#E2F5E6] p-6 sm:p-8 text-center flex-1 flex flex-col items-center justify-center"
+              aria-label="No chats"
+              style={{ fontFamily: 'Arial, sans-serif' }}
+            >
+              <p className="text-lg font-medium text-gray-800 mb-2" style={{ fontFamily: 'Arial, sans-serif' }}>Ingen chats endnu</p>
+              <p className="text-gray-500 mb-4 max-w-sm" style={{ fontFamily: 'Arial, sans-serif' }}>
+                Dine chats med andre forældre vil vises her. Du modtager en chat, når et andet forældres barn vil forbinde med dit barn.
+              </p>
+            </section>
+          ) : (
+            <ul
+              className="divide-y divide-gray-200 rounded-xl border border-gray-200 bg-[#E2F5E6] flex-1 min-h-0 overflow-auto"
+              role="list"
+              aria-label="Chat list"
+              style={{ fontFamily: 'Arial, sans-serif' }}
+            >
+              {sortedChats.map((chat) => {
+                let otherId: string;
+                if (chat.user1_id === user.id || chat.user2_id === user.id) {
+                  otherId = chat.user1_id === user.id ? chat.user2_id : chat.user1_id;
+                } else if (storedParentLinks && storedParentLinks.length > 0) {
+                  const childIds = new Set(storedParentLinks.map(link => link.child_id));
+                  if (childIds.has(chat.user1_id)) {
+                    otherId = chat.user2_id;
+                  } else if (childIds.has(chat.user2_id)) {
+                    otherId = chat.user1_id;
+                  } else {
+                    otherId = chat.user1_id === user.id ? chat.user2_id : chat.user1_id;
+                  }
+                } else {
+                  otherId = chat.user1_id === user.id ? chat.user2_id : chat.user1_id;
+                }
+                const other = usersById[otherId];
+                const label = otherUserLabel(other);
+                const lastMsg = lastMessageByChat[chat.id];
+                const unread = getUnreadCount(chat.id);
+                const date = lastMsg
+                  ? new Date(lastMsg.created_at)
+                  : new Date(chat.created_at);
+                const dateStr =
+                  date.toDateString() === new Date().toDateString()
+                    ? date.toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })
+                    : date.toLocaleDateString();
+                const preview = lastMsg
+                  ? lastMsg.content?.trim() || "Vedhæftet fil"
+                  : "Ingen beskeder endnu";
+
+                return (
+                  <li key={chat.id} role="listitem">
+                    <Link
+                      href={`/chats/${chat.id}`}
+                      className="flex items-center gap-3 sm:gap-4 px-4 py-3 sm:py-3.5 hover:bg-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-inset focus:ring-[#E0785B] transition touch-manipulation"
+                      aria-label={`Chat with ${label}${unread > 0 ? `, ${unread} unread` : ""}`}
+                    >
+                      {other?.avatar_url ? (
+                        <img 
+                          src={other.avatar_url} 
+                          alt={`${label}'s avatar`} 
+                          className="h-10 w-10 flex-shrink-0 rounded-full object-cover bg-gray-200"
+                          onError={(e) => {
+                            const target = e.target as HTMLImageElement;
+                            target.style.display = 'none';
+                            const fallback = target.nextElementSibling as HTMLElement;
+                            if (fallback) fallback.style.display = 'flex';
+                          }}
+                        />
+                      ) : null}
+                      <span 
+                        className={`h-10 w-10 flex-shrink-0 rounded-full bg-gray-200 flex items-center justify-center text-gray-500 text-sm font-medium ${other?.avatar_url ? 'hidden' : ''}`}
+                        aria-hidden="true"
+                      >
+                        {label.slice(0, 1).toUpperCase()}
+                      </span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-medium text-gray-900 truncate" style={{ fontFamily: 'Arial, sans-serif' }}>
+                            {label}
+                          </span>
+                          <span className="text-sm text-gray-500 flex-shrink-0" style={{ fontFamily: 'Arial, sans-serif' }}>
+                            {dateStr}
+                          </span>
+                        </div>
+                        <p className="text-sm text-gray-500 truncate mt-0.5" style={{ fontFamily: 'Arial, sans-serif' }}>
+                          {preview}
+                        </p>
+                      </div>
+                      {unread > 0 && (
+                        <span
+                          className="flex-shrink-0 rounded-full bg-[#E0785B] text-white text-xs font-medium min-w-[22px] h-[22px] inline-flex items-center justify-center px-1.5"
+                          aria-label={`${unread} unread`}
+                          style={{ fontFamily: 'Arial, sans-serif' }}
+                        >
+                          {unread > 99 ? "99+" : unread}
+                        </span>
+                      )}
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          )
         )}
 
-        <p className="mt-4 sm:mt-6">
-          <Link
-            href="/"
-            className="text-sm text-gray-400 hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded px-1 py-0.5"
-          >
-            ← Hjem
-          </Link>
-        </p>
       </div>
+
+      {/* Bottom Navigation Bar - Only for children */}
+      {isChild && (
+        <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 safe-area-inset-bottom z-50">
+          <div className="max-w-2xl mx-auto flex items-center justify-around px-2 py-2">
+            <Link
+              href="/chats"
+              className={`flex flex-col items-center justify-center px-3 py-2 min-h-[60px] min-w-[60px] rounded-lg transition-colors ${
+                isActive("/chats") ? "text-[#E0785B]" : "text-gray-400"
+              }`}
+              aria-label="Chat"
+            >
+                    <Image src="/chaticon.svg" alt="" width={48} height={48} className="w-12 h-12" />
+            </Link>
+            <Link
+              href="/groups"
+              className={`flex flex-col items-center justify-center px-3 py-2 min-h-[60px] min-w-[60px] rounded-lg transition-colors ${
+                isActive("/groups") ? "text-[#E0785B]" : "text-gray-400"
+              }`}
+              aria-label="Grupper"
+            >
+                    <Image src="/groupsicon.svg" alt="" width={67} height={67} className="w-[67px] h-[67px]" />
+            </Link>
+            <Link
+              href="/chats/new"
+              className={`flex flex-col items-center justify-center px-3 py-2 min-h-[60px] min-w-[60px] rounded-lg transition-colors ${
+                isActive("/chats/new") ? "text-[#E0785B]" : "text-gray-400"
+              }`}
+              aria-label="Find venner"
+            >
+                    <Image src="/findfriends.svg" alt="" width={48} height={48} className="w-12 h-12" />
+            </Link>
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="flex flex-col items-center justify-center px-3 py-2 min-h-[60px] min-w-[60px] rounded-lg transition-colors text-gray-400 hover:text-[#E0785B] focus:outline-none focus:ring-2 focus:ring-[#E0785B]"
+              aria-label="Indstillinger"
+            >
+                    <Image src="/logout.svg" alt="" width={48} height={48} className="w-12 h-12" />
+            </button>
+          </div>
+        </nav>
+      )}
     </main>
   );
 }

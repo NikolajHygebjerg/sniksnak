@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { supabase } from "@/lib/supabase";
 import type { User } from "@supabase/supabase-js";
 
@@ -29,6 +30,7 @@ function displayName(u: UserRow): string {
 
 export default function NewChatPage() {
   const router = useRouter();
+  const pathname = usePathname();
   const [user, setUser] = useState<User | null>(null);
   const [otherUsers, setOtherUsers] = useState<UserRow[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
@@ -37,6 +39,24 @@ export default function NewChatPage() {
   const [error, setError] = useState<string | null>(null);
   const [inviteCopied, setInviteCopied] = useState(false);
   const [hasOtherChildren, setHasOtherChildren] = useState<boolean | null>(null);
+  const [isChild, setIsChild] = useState(false);
+  const [sentRequests, setSentRequests] = useState<Array<{
+    id: number;
+    child_id: string;
+    contact_user_id: string;
+    chat_id: string;
+    created_at: string;
+  }>>([]);
+  const [requestChildrenById, setRequestChildrenById] = useState<Record<string, UserRow>>({});
+  const [withdrawingRequestId, setWithdrawingRequestId] = useState<number | null>(null);
+
+  const isActive = (path: string) => pathname === path;
+
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    router.push("/");
+    router.refresh();
+  }
 
   const filteredUsers = useMemo(() => {
     if (!searchQuery.trim()) return []; // Don't show any users until they search
@@ -67,6 +87,17 @@ export default function NewChatPage() {
       }
       setUser(session.user);
       const uid = session.user.id;
+
+      // Check if current user is a child
+      const { data: userData } = await supabase
+        .from("users")
+        .select("is_child, username")
+        .eq("id", uid)
+        .maybeSingle();
+      
+      // Check if user is a child - either has is_child=true OR has a username
+      const userIsChild = userData?.is_child === true || (userData?.username != null && String(userData.username).trim() !== "");
+      setIsChild(userIsChild);
 
       // Only load children (is_child = true) who have an active parent link
       // First, get all children with parent links
@@ -194,10 +225,95 @@ export default function NewChatPage() {
         setOtherUsers(childrenOnly);
         setHasOtherChildren(childrenOnly.length > 0);
       }
+
+      // Load sent pending requests if user is a child
+      if (userIsChild) {
+        console.log("[Find friends] Loading sent requests for user:", uid);
+        const { data: sentRequestsData, error: sentRequestsErr } = await supabase
+          .from("pending_contact_requests")
+          .select("id, child_id, contact_user_id, chat_id, created_at")
+          .eq("contact_user_id", uid);
+
+        if (cancelled) return;
+
+        if (sentRequestsErr) {
+          console.error("[Find friends] Error loading sent requests:", sentRequestsErr);
+          // Don't set error state - this is not critical
+        } else {
+          console.log("[Find friends] Sent requests loaded:", sentRequestsData?.length || 0);
+          if (sentRequestsData && sentRequestsData.length > 0) {
+            if (!cancelled) {
+              setSentRequests(sentRequestsData as Array<{
+                id: number;
+                child_id: string;
+                contact_user_id: string;
+                chat_id: string;
+                created_at: string;
+              }>);
+            }
+
+            // Load child info for sent requests
+            const childIds = [...new Set(sentRequestsData.map((r: any) => r.child_id))];
+            if (childIds.length > 0 && !cancelled) {
+              const { data: childrenData, error: childrenErr } = await supabase
+                .from("users")
+                .select("id, email, username, first_name, surname, avatar_url")
+                .in("id", childIds);
+
+              if (cancelled) return;
+
+              if (childrenErr) {
+                console.error("[Find friends] Error loading children for sent requests:", childrenErr);
+              } else if (childrenData && !cancelled) {
+                const childrenMap: Record<string, UserRow> = {};
+                for (const c of childrenData) {
+                  childrenMap[c.id] = c;
+                }
+                setRequestChildrenById(childrenMap);
+              }
+            }
+          } else if (!cancelled) {
+            // Explicitly set empty array if no requests found
+            setSentRequests([]);
+          }
+        }
+      } else {
+        console.log("[Find friends] User is not a child, skipping sent requests load");
+      }
+
       setLoading(false);
     }
     load();
   }, [router]);
+
+  async function handleWithdrawRequest(requestId: number) {
+    if (!user || withdrawingRequestId !== null) return;
+    
+    setWithdrawingRequestId(requestId);
+    setError(null);
+    
+    try {
+      const { error: deleteErr } = await supabase
+        .from("pending_contact_requests")
+        .delete()
+        .eq("id", requestId)
+        .eq("contact_user_id", user.id); // Ensure user can only delete their own requests
+
+      if (deleteErr) {
+        setError(`Kunne ikke trække anmodning tilbage: ${deleteErr.message}`);
+        setWithdrawingRequestId(null);
+        return;
+      }
+
+      // Remove from local state
+      setSentRequests((prev) => prev.filter((r) => r.id !== requestId));
+      setWithdrawingRequestId(null);
+    } catch (err) {
+      console.error("Exception withdrawing request:", err);
+      setError(err instanceof Error ? err.message : "Der opstod en fejl");
+      setWithdrawingRequestId(null);
+    }
+  }
 
   async function startChat(otherId: string) {
     if (!user) return;
@@ -314,6 +430,41 @@ export default function NewChatPage() {
         }
       }
       router.push(`/chats/${inserted.id}`);
+      
+      // Refresh sent requests after creating a new one
+      if (isChild) {
+        const { data: updatedRequests } = await supabase
+          .from("pending_contact_requests")
+          .select("id, child_id, contact_user_id, chat_id, created_at")
+          .eq("contact_user_id", user.id);
+        
+        if (updatedRequests) {
+          setSentRequests(updatedRequests as Array<{
+            id: number;
+            child_id: string;
+            contact_user_id: string;
+            chat_id: string;
+            created_at: string;
+          }>);
+          
+          // Also update children map
+          const childIds = [...new Set(updatedRequests.map((r: any) => r.child_id))];
+          if (childIds.length > 0) {
+            const { data: childrenData } = await supabase
+              .from("users")
+              .select("id, email, username, first_name, surname, avatar_url")
+              .in("id", childIds);
+            
+            if (childrenData) {
+              const childrenMap: Record<string, UserRow> = {};
+              for (const c of childrenData) {
+                childrenMap[c.id] = c;
+              }
+              setRequestChildrenById(childrenMap);
+            }
+          }
+        }
+      }
     }
   }
 
@@ -333,23 +484,62 @@ export default function NewChatPage() {
   }
 
   return (
-    <main className="min-h-screen p-6">
+    <main className="min-h-screen p-6 bg-[#C4E6CA] pb-20">
       <div className="max-w-2xl mx-auto">
-        <div className="flex items-center justify-between mb-4">
-          <h1 className="text-2xl font-semibold">Find chat-venner</h1>
-          <Link
-            href="/chats"
-            className="text-sm text-blue-600 hover:underline"
-          >
-            ← Tilbage til chats
-          </Link>
+        {/* Logo */}
+        <div className="flex-shrink-0 flex justify-center mb-4">
+          <Image src="/logo.svg" alt="Sniksnak Chat" width={156} height={156} className="w-[156px] h-[156px]" />
         </div>
+        <h1 className="text-2xl font-semibold mb-4" style={{ fontFamily: 'Arial, sans-serif' }}>Find chat-venner</h1>
         <p className="text-gray-500 text-sm mb-4">
           Søg efter andre børn efter navn, eller send dem et invitationslink, så de kan deltage og chatte med dig.
         </p>
 
         {error && (
           <p className="mb-4 text-sm text-red-600">{error}</p>
+        )}
+
+        {/* Sent friend requests section */}
+        {isChild && (
+          <section className="mb-6 rounded-3xl border border-gray-200 bg-[#E2F5E6] p-4 sm:p-6">
+            <h2 className="text-lg font-semibold mb-3" style={{ fontFamily: 'Arial, sans-serif' }}>Sendte venneanmodninger</h2>
+            {sentRequests.length === 0 ? (
+              <p className="text-sm text-gray-500 text-center py-2" style={{ fontFamily: 'Arial, sans-serif' }}>
+                Du har ikke sendt nogen venneanmodninger endnu.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {sentRequests.map((request) => {
+                  const child = requestChildrenById[request.child_id];
+                  const childLabel = child?.first_name && child?.surname
+                    ? `${child.first_name} ${child.surname}`
+                    : child?.username ?? child?.email ?? "Ukendt";
+                  
+                  return (
+                    <div
+                      key={request.id}
+                      className="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-200"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-900" style={{ fontFamily: 'Arial, sans-serif' }}>
+                          Ventende på godkendelse fra <span className="font-semibold">{childLabel}</span>s forælder
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleWithdrawRequest(request.id)}
+                        disabled={withdrawingRequestId === request.id}
+                        className="ml-3 px-4 py-2 text-sm font-semibold text-red-700 bg-white border-2 border-red-300 rounded-lg hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed transition flex-shrink-0"
+                        style={{ fontFamily: 'Arial, sans-serif' }}
+                      >
+                        {withdrawingRequestId === request.id ? "Trækker tilbage…" : "Træk tilbage"}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
         )}
 
         <div className="mb-4">
@@ -362,13 +552,13 @@ export default function NewChatPage() {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Søg efter børn efter fornavn eller efternavn…"
-            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="w-full rounded-lg border border-gray-300 bg-[#E2F5E6] px-3 py-2 text-sm focus:border-[#E0785B] focus:outline-none focus:ring-1 focus:ring-[#E0785B]"
             autoComplete="off"
           />
         </div>
 
         {!searchQuery.trim() ? null : hasOtherChildren === false ? (
-          <section className="rounded-xl border border-gray-200 bg-gray-50 p-6 text-center">
+          <section className="rounded-xl border border-gray-200 bg-[#E2F5E6] p-6 text-center">
             <p className="text-gray-600 mb-2">Ingen andre børn fundet</p>
             <p className="text-sm text-gray-500 mb-4">
               Der er ingen andre børn med aktive konti i systemet endnu. Del app-linket nedenfor, så andre børn kan deltage og forbinde med dig.
@@ -376,13 +566,13 @@ export default function NewChatPage() {
             <button
               type="button"
               onClick={copyAppLink}
-              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="rounded-lg bg-[#E0785B] px-4 py-2 text-sm font-medium text-white hover:bg-[#D06A4F] focus:outline-none focus:ring-2 focus:ring-[#E0785B]"
             >
               {inviteCopied ? "Kopieret!" : "Kopiér app-link for at invitere"}
             </button>
           </section>
         ) : filteredUsers.length === 0 ? (
-          <section className="rounded-xl border border-gray-200 bg-gray-50 p-6 text-center">
+          <section className="rounded-xl border border-gray-200 bg-[#E2F5E6] p-6 text-center">
             <p className="text-gray-600 mb-2">Ingen resultater for &quot;{searchQuery}&quot;</p>
             <p className="text-sm text-gray-500 mb-4">
               Prøv et andet navn, eller send app-linket til en ven, så de kan deltage.
@@ -390,20 +580,20 @@ export default function NewChatPage() {
             <button
               type="button"
               onClick={copyAppLink}
-              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="rounded-lg bg-[#E0785B] px-4 py-2 text-sm font-medium text-white hover:bg-[#D06A4F] focus:outline-none focus:ring-2 focus:ring-[#E0785B]"
             >
               {inviteCopied ? "Kopieret!" : "Kopiér app-link for at invitere"}
             </button>
           </section>
         ) : (
-          <ul className="divide-y divide-gray-200 rounded-xl border border-gray-200 bg-white">
+          <ul className="divide-y divide-gray-200 rounded-xl border border-gray-200 bg-[#E2F5E6]">
             {filteredUsers.map((u) => (
               <li key={u.id}>
                 <button
                   type="button"
                   onClick={() => startChat(u.id)}
                   disabled={creating === u.id}
-                  className="flex w-full items-center gap-3 justify-between px-4 py-3 text-left hover:bg-gray-50 transition disabled:opacity-50"
+                  className="flex w-full items-center gap-3 justify-between px-4 py-3 text-left hover:bg-white transition disabled:opacity-50"
                 >
                   <span className="flex items-center gap-3 min-w-0 flex-1">
                     {u.avatar_url ? (
@@ -418,7 +608,7 @@ export default function NewChatPage() {
                   {creating === u.id ? (
                     <span className="text-sm text-gray-500">Sender…</span>
                   ) : (
-                    <span className="text-sm text-blue-600">Bliv ven</span>
+                    <span className="text-sm text-[#E0785B]">Bliv ven</span>
                   )}
                 </button>
               </li>
@@ -426,34 +616,64 @@ export default function NewChatPage() {
           </ul>
         )}
 
-        <section className="mt-6 rounded-xl border border-gray-200 bg-gray-50 p-4">
-          <p className="text-sm font-medium text-gray-700 mb-1">Inviter en ven</p>
-          <p className="text-sm text-gray-500 mb-3">
+        <section className="mt-6 rounded-xl border border-gray-200 bg-[#E2F5E6] p-4">
+          <p className="text-sm font-medium text-gray-700 mb-1" style={{ fontFamily: 'Arial, sans-serif' }}>Inviter en ven</p>
+          <p className="text-sm text-gray-500 mb-3" style={{ fontFamily: 'Arial, sans-serif' }}>
             Kan du ikke finde nogen? Del app-linket, så de kan deltage. Søg derefter efter deres navn for at sende dem en venneanmodning.
           </p>
-          <div className="flex gap-2">
-            <input
-              type="text"
-              readOnly
-              value={typeof window !== "undefined" ? window.location.origin : ""}
-              className="flex-1 rounded border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700"
-            />
+          <button
+            type="button"
+            onClick={copyAppLink}
+            className="w-full rounded-lg bg-[#E0785B] px-4 py-2 text-sm font-medium text-white hover:bg-[#D06A4F] focus:outline-none focus:ring-2 focus:ring-[#E0785B] min-h-[44px]"
+            style={{ fontFamily: 'Arial, sans-serif' }}
+          >
+            {inviteCopied ? "Kopieret!" : "Kopiér invitation"}
+          </button>
+        </section>
+      </div>
+
+      {/* Bottom Navigation Bar - Only for children */}
+      {isChild && (
+        <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 safe-area-inset-bottom z-50">
+          <div className="max-w-2xl mx-auto flex items-center justify-around px-2 py-2">
+            <Link
+              href="/chats"
+              className={`flex flex-col items-center justify-center px-3 py-2 min-h-[60px] min-w-[60px] rounded-lg transition-colors ${
+                isActive("/chats") ? "text-[#E0785B]" : "text-gray-400"
+              }`}
+              aria-label="Chat"
+            >
+              <Image src="/chaticon.svg" alt="" width={48} height={48} className="w-12 h-12" />
+            </Link>
+            <Link
+              href="/groups"
+              className={`flex flex-col items-center justify-center px-3 py-2 min-h-[60px] min-w-[60px] rounded-lg transition-colors ${
+                isActive("/groups") ? "text-[#E0785B]" : "text-gray-400"
+              }`}
+              aria-label="Grupper"
+            >
+              <Image src="/groupsicon.svg" alt="" width={67} height={67} className="w-[67px] h-[67px]" />
+            </Link>
+            <Link
+              href="/chats/new"
+              className={`flex flex-col items-center justify-center px-3 py-2 min-h-[60px] min-w-[60px] rounded-lg transition-colors ${
+                isActive("/chats/new") ? "text-[#E0785B]" : "text-gray-400"
+              }`}
+              aria-label="Find venner"
+            >
+              <Image src="/findfriends.svg" alt="" width={48} height={48} className="w-12 h-12" />
+            </Link>
             <button
               type="button"
-              onClick={copyAppLink}
-              className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              onClick={handleLogout}
+              className="flex flex-col items-center justify-center px-3 py-2 min-h-[60px] min-w-[60px] rounded-lg transition-colors text-gray-400 hover:text-[#E0785B] focus:outline-none focus:ring-2 focus:ring-[#E0785B]"
+              aria-label="Indstillinger"
             >
-              {inviteCopied ? "Kopieret!" : "Kopiér link"}
+              <Image src="/logout.svg" alt="" width={48} height={48} className="w-12 h-12" />
             </button>
           </div>
-        </section>
-
-        <p className="mt-6">
-          <Link href="/" className="text-sm text-gray-400 hover:text-gray-600">
-            ← Hjem
-          </Link>
-        </p>
-      </div>
+        </nav>
+      )}
     </main>
   );
 }
