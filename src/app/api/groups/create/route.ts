@@ -56,14 +56,21 @@ export async function POST(request: NextRequest) {
 
   const contentType = request.headers.get("content-type") ?? "";
   let name = "";
-  let avatarFile: File | Blob | null = null;
+  let avatarFile: File | null = null;
 
   if (contentType.includes("multipart/form-data")) {
     const formData = await request.formData();
     name = (formData.get("name") as string | null)?.trim() ?? "";
     const avatar = formData.get("avatar");
-    if (avatar instanceof File) avatarFile = avatar;
-    else if (avatar instanceof Blob) avatarFile = avatar;
+    if (avatar instanceof File) {
+      avatarFile = avatar;
+    }
+    // Fjern check for Blob, da Node.js ikke har Blob globalt.
+    // Hvis du vil håndtere en mulig string, kan du evt. konvertere til buffer:
+    // else if (typeof avatar === "string") {
+    //   // Hvis du forventer en base64 string:
+    //   // avatarFile = Buffer.from(avatar, "base64");
+    // }
   } else {
     try {
       const body = await request.json();
@@ -86,13 +93,13 @@ export async function POST(request: NextRequest) {
   // Upload avatar if provided
   if (avatarFile) {
     try {
-      const fileExt = avatarFile instanceof File ? avatarFile.name.split(".").pop() : "jpg";
+      const fileExt = avatarFile.name.split(".").pop() || "jpg";
       const fileName = `group-avatars/${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
 
       const { error: uploadErr } = await admin.storage
         .from(BUCKET)
         .upload(fileName, avatarFile, {
-          contentType: avatarFile instanceof File ? avatarFile.type : "image/jpeg",
+          contentType: avatarFile.type || "image/jpeg",
           upsert: false,
         });
 
