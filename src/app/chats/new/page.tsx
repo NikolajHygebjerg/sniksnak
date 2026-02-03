@@ -523,16 +523,33 @@ export default function NewChatPage() {
         <div className="flex-shrink-0 flex justify-center mb-4">
           <Image src="/logo.svg" alt="Sniksnak Chat" width={156} height={156} className="w-[156px] h-[156px]" />
         </div>
-        <h1 className="text-2xl font-semibold mb-4" style={{ fontFamily: 'Arial, sans-serif' }}>Find chat-venner</h1>
-        <p className="text-gray-500 text-sm mb-4">
+        <h1 className="text-2xl font-semibold mb-2" style={{ fontFamily: 'Arial, sans-serif' }}>Find chat-venner</h1>
+        <p className="text-gray-500 text-sm mb-6" style={{ fontFamily: 'Arial, sans-serif' }}>
           Søg efter andre børn efter navn, eller send dem et invitationslink, så de kan deltage og chatte med dig.
         </p>
 
         {error && (
-          <p className="mb-4 text-sm text-red-600">{error}</p>
+          <p className="mb-4 text-sm text-red-600" style={{ fontFamily: 'Arial, sans-serif' }}>{error}</p>
         )}
 
-        {/* Sent friend requests section */}
+        {/* Search field - main focus */}
+        <div className="mb-6">
+          <label htmlFor="search-chat-friends" className="block text-sm font-semibold text-gray-700 mb-2" style={{ fontFamily: 'Arial, sans-serif' }}>
+            Søg efter børn
+          </label>
+          <input
+            id="search-chat-friends"
+            type="search"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Indtast fornavn eller efternavn…"
+            className="w-full rounded-xl border-2 border-gray-300 bg-[#E2F5E6] px-4 py-3 text-base focus:border-[#E0785B] focus:outline-none focus:ring-2 focus:ring-[#E0785B] transition"
+            style={{ fontFamily: 'Arial, sans-serif' }}
+            autoComplete="off"
+          />
+        </div>
+
+        {/* Sent friend requests section - moved below search */}
         {isChild && (
           <section className="mb-6 rounded-3xl border border-gray-200 bg-[#E2F5E6] p-4 sm:p-6">
             <h2 className="text-lg font-semibold mb-3" style={{ fontFamily: 'Arial, sans-serif' }}>Sendte venneanmodninger</h2>
@@ -574,21 +591,6 @@ export default function NewChatPage() {
             )}
           </section>
         )}
-
-        <div className="mb-4">
-          <label htmlFor="search-chat-friends" className="sr-only">
-            Search for children by name
-          </label>
-          <input
-            id="search-chat-friends"
-            type="search"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Søg efter børn efter fornavn eller efternavn…"
-            className="w-full rounded-lg border border-gray-300 bg-[#E2F5E6] px-3 py-2 text-sm focus:border-[#E0785B] focus:outline-none focus:ring-1 focus:ring-[#E0785B]"
-            autoComplete="off"
-          />
-        </div>
 
         {!searchQuery.trim() ? null : hasOtherChildren === false ? (
           <section className="rounded-xl border border-gray-200 bg-[#E2F5E6] p-6 text-center">
