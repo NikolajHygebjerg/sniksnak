@@ -245,7 +245,7 @@ export async function GET(request: NextRequest) {
     // Combine with membership info
     // For groups where user is creator but not member, set role to "admin" and joined_at to created_at
     const groupsWithMembership = (groups || []).map(group => {
-      const membership = memberships.find(m => m.group_id === group.id);
+      const membership = (memberships || []).find(m => m.group_id === group.id);
       // If user is creator but not member, they should be admin
       const isCreator = group.created_by === user.id;
       const role = membership?.role || (isCreator ? "admin" : "member");
