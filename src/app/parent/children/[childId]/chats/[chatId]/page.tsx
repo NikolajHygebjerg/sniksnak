@@ -259,7 +259,7 @@ export default function ParentChatDetailPage() {
       <div className="max-w-2xl mx-auto w-full flex flex-col flex-1 min-h-0">
         {/* Logo */}
         <div className="flex-shrink-0 flex justify-center mb-4 px-4 pt-6">
-          <Image src="/logo.svg" alt="Sniksnak Chat" width={156} height={156} className="w-[156px] h-[156px]" />
+          <Image src="/logo.svg" alt="Sniksnak Chat" width={156} height={156} className="w-[156px] h-[156px]" loading="eager" />
         </div>
         <header className="flex-shrink-0 flex items-center gap-4 px-4 py-3 border-b border-gray-200 bg-[#E2F5E6]">
           <Link

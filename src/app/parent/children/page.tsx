@@ -416,7 +416,7 @@ export default function ParentChildrenPage() {
       <div className="max-w-2xl mx-auto">
         {/* Logo */}
         <div className="flex-shrink-0 flex justify-center mb-4">
-          <Image src="/logo.svg" alt="Sniksnak Chat" width={156} height={156} className="w-[156px] h-[156px]" />
+          <Image src="/logo.svg" alt="Sniksnak Chat" width={156} height={156} className="w-[156px] h-[156px]" loading="eager" />
         </div>
 
         <h1 className="text-2xl font-semibold mb-4" style={{ fontFamily: 'Arial, sans-serif' }}>Mine børn</h1>

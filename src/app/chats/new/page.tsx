@@ -522,7 +522,7 @@ export default function NewChatPage() {
       <div className="max-w-2xl mx-auto">
         {/* Logo */}
         <div className="flex-shrink-0 flex justify-center mb-4">
-          <Image src="/logo.svg" alt="Sniksnak Chat" width={156} height={156} className="w-[156px] h-[156px]" />
+          <Image src="/logo.svg" alt="Sniksnak Chat" width={156} height={156} className="w-[156px] h-[156px]" loading="eager" />
         </div>
         <h1 className="text-2xl font-semibold mb-2" style={{ fontFamily: 'Arial, sans-serif' }}>Find chat-venner</h1>
         <p className="text-gray-500 text-sm mb-6" style={{ fontFamily: 'Arial, sans-serif' }}>

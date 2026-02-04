@@ -816,7 +816,7 @@ export default function ChatsPage() {
       <div className="max-w-2xl mx-auto w-full flex flex-col min-h-0 px-4 py-6">
         {/* Logo */}
         <div className="flex-shrink-0 flex justify-center mb-4">
-          <Image src="/logo.svg" alt="Sniksnak Chat" width={156} height={156} className="w-[156px] h-[156px]" />
+          <Image src="/logo.svg" alt="Sniksnak Chat" width={156} height={156} className="w-[156px] h-[156px]" loading="eager" />
         </div>
 
         {/* Current User Avatar and First Name - Only for children */}

@@ -128,7 +128,7 @@ export default function ChildLoginPage() {
       <div className="w-full max-w-sm space-y-6">
         {/* Logo */}
         <div className="flex-shrink-0 flex justify-center">
-          <Image src="/logo.svg" alt="Sniksnak Chat" width={156} height={156} className="w-[156px] h-[156px]" />
+          <Image src="/logo.svg" alt="Sniksnak Chat" width={156} height={156} className="w-[156px] h-[156px]" loading="eager" />
         </div>
         
         <p className="text-sm text-gray-500 text-center" style={{ fontFamily: 'Arial, sans-serif' }}>

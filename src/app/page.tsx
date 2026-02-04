@@ -61,6 +61,7 @@ export default function Home() {
             height={120}
             className="w-[120px] h-[120px]"
             priority
+            loading="eager"
           />
           <p className="text-gray-500">Indlæser…</p>
         </div>
@@ -80,6 +81,7 @@ export default function Home() {
             height={156}
             className="w-[156px] h-[156px]"
             priority
+            loading="eager"
           />
         </div>
 
