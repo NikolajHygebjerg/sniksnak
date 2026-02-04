@@ -136,6 +136,13 @@ export async function POST(request: NextRequest) {
         content?: string | null;
       };
       
+      // Create Supabase client for push notification
+      if (!supabaseUrl || !supabaseServiceKey) {
+        console.warn('Supabase credentials not available for push notification');
+        return NextResponse.json({ ok: true });
+      }
+      const supabase = createClient(supabaseUrl, supabaseServiceKey);
+      
       // Get sender user info for notification
       const { data: senderUser } = await supabase
         .from("users")
