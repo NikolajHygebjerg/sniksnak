@@ -221,12 +221,14 @@ export default function GroupChatPage() {
           
           // Mark as read when new message arrives (if user is viewing)
           if (user && chatId) {
-            supabase
-              .from("chat_reads")
-              .upsert(
-                { user_id: user.id, chat_id: chatId, last_read_at: new Date().toISOString() },
-                { onConflict: "user_id,chat_id" }
-              )
+            Promise.resolve(
+              supabase
+                .from("chat_reads")
+                .upsert(
+                  { user_id: user.id, chat_id: chatId, last_read_at: new Date().toISOString() },
+                  { onConflict: "user_id,chat_id" }
+                )
+            )
               .then(({ error }) => {
                 if (error) {
                   console.error("Error marking as read:", error);
