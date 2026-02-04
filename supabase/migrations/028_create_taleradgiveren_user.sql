@@ -32,14 +32,16 @@ BEGIN
     SET 
       first_name = 'Talerådgiveren',
       surname = '',
-      username = 'Talerådgiveren'
+      username = 'Talerådgiveren',
+      avatar_url = '/taleradgiveren-avatar.png'
     WHERE id = '945d9864-7118-487b-addb-1dd1e821bc30';
   ELSE
     -- Username is taken, use first_name only (username can be null)
     UPDATE public.users
     SET 
       first_name = 'Talerådgiveren',
-      surname = ''
+      surname = '',
+      avatar_url = '/taleradgiveren-avatar.png'
       -- Don't set username if it's already taken by another user
     WHERE id = '945d9864-7118-487b-addb-1dd1e821bc30';
     
@@ -48,6 +50,6 @@ BEGIN
 END $$;
 
 -- Verify the user was created/updated
-SELECT id, email, first_name, surname, username 
+SELECT id, email, first_name, surname, username, avatar_url 
 FROM public.users 
 WHERE id = '945d9864-7118-487b-addb-1dd1e821bc30';

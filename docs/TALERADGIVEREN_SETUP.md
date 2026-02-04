@@ -56,10 +56,14 @@ BEGIN
 END $$;
 
 -- Verify
-SELECT id, email, first_name, surname, username 
+SELECT id, email, first_name, surname, username, avatar_url 
 FROM public.users 
 WHERE id = '945d9864-7118-487b-addb-1dd1e821bc30';
 ```
+
+**Eller kør migrationen for at tilføje avatar:**
+1. Kør migration filen: `supabase/migrations/030_add_taleradgiveren_avatar.sql`
+2. Dette opdaterer Talerådgiveren med avatar URL: `/taleradgiveren-avatar.png`
 
 ## Trin 3: Tjek Environment Variabler
 
