@@ -4,5 +4,5 @@
 -- Frontend enforces the restriction by checking for flagged messages.
 -- ============================================================
 -- The frontend check in chats/[id]/page.tsx ensures medium level parents
--- can only access chats that have flagged messages.
+-- can only access chats that have anmeldte beskeder.
 -- ============================================================

@@ -57,7 +57,7 @@ async function ensureBucketExists(admin: ReturnType<typeof createClient>) {
 export async function POST(request: NextRequest) {
   if (!supabaseUrl || !serviceRoleKey) {
     return NextResponse.json(
-      { error: "Server mangler SUPABASE_SERVICE_ROLE_KEY eller URL" },
+      { error: "Server missing SUPABASE_SERVICE_ROLE_KEY or URL" },
       { status: 503 }
     );
   }
@@ -65,13 +65,13 @@ export async function POST(request: NextRequest) {
   const authHeader = request.headers.get("authorization");
   const token = authHeader?.replace("Bearer ", "").trim();
   if (!token) {
-    return NextResponse.json({ error: "Uautoriseret. Send Authorization: Bearer <access_token>." }, { status: 401 });
+    return NextResponse.json({ error: "Unauthorized. Send Authorization: Bearer <access_token>." }, { status: 401 });
   }
 
   const anonClient = createClient(supabaseUrl, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "");
   const { data: { user: parentUser }, error: authErr } = await anonClient.auth.getUser(token);
   if (authErr || !parentUser) {
-    return NextResponse.json({ error: "Ugyldig eller udløbet session" }, { status: 401 });
+    return NextResponse.json({ error: "Invalid or expired session" }, { status: 401 });
   }
 
   let first_name = "";
@@ -106,7 +106,7 @@ export async function POST(request: NextRequest) {
       }
     } catch {
       return NextResponse.json(
-        { error: "Send multipart/form-data med first_name, surname, pin, surveillance_level og photo (et foto af barnet er påkrævet)." },
+        { error: "Send multipart/form-data with first_name, surname, pin, surveillance_level, and photo (a photo of the child is required)." },
         { status: 400 }
       );
     }
@@ -114,85 +114,61 @@ export async function POST(request: NextRequest) {
 
   if (!photoFile || photoFile.size === 0) {
     return NextResponse.json(
-      { error: "Et foto af barnet er påkrævet. Upload venligst et klart foto af dit barn af sikkerhedsmæssige årsager." },
+      { error: "A photo of the child is required. Please upload a clear photo of your child for security." },
       { status: 400 }
     );
   }
   const isImage = photoFile.type?.startsWith?.("image/");
   if (!isImage) {
     return NextResponse.json(
-      { error: "Fotoet skal være en billedfil (f.eks. JPEG eller PNG) af dit barn." },
+      { error: "The photo must be an image file (e.g. JPEG or PNG) of your child." },
       { status: 400 }
     );
   }
 
   if (!first_name || !surname) {
-    return NextResponse.json({ error: "Både fornavn og efternavn er påkrævet" }, { status: 400 });
+    return NextResponse.json({ error: "Both first name and surname are required" }, { status: 400 });
   }
   if (first_name.length < 2) {
-    return NextResponse.json({ error: "Fornavn skal være mindst 2 tegn" }, { status: 400 });
+    return NextResponse.json({ error: "First name must be at least 2 characters" }, { status: 400 });
   }
   if (surname.length < 2) {
-    return NextResponse.json({ error: "Efternavn skal være mindst 2 tegn" }, { status: 400 });
+    return NextResponse.json({ error: "Surname must be at least 2 characters" }, { status: 400 });
   }
   const anonymousFirst = ["incognito", "anonymous", "anon", "unknown", "hidden", "secret", "fake", "test", "demo"];
   if (anonymousFirst.includes(first_name.toLowerCase()) || anonymousFirst.includes(surname.toLowerCase())) {
-    return NextResponse.json({ error: "Brug dit barns rigtige fornavn og efternavn" }, { status: 400 });
+    return NextResponse.json({ error: "Use your child's real first name and surname" }, { status: 400 });
   }
   if (!pin || pin.length < 4 || pin.length > 12) {
-    return NextResponse.json({ error: "PIN skal være 4–12 tegn" }, { status: 400 });
+    return NextResponse.json({ error: "PIN must be 4–12 characters" }, { status: 400 });
   }
 
   const username = toUsername(first_name, surname);
   const admin = createClient(supabaseUrl, serviceRoleKey);
 
-  // Check if username already exists
-  const { data: existing, error: existingErr } = await admin
-    .from("users")
-    .select("id, username, first_name, surname")
-    .eq("username", username)
-    .maybeSingle();
-  
+  const { data: existing, error: existingErr } = await admin.from("users").select("id").eq("username", username).maybeSingle();
   if (existingErr) {
     if (/username|schema cache|column/i.test(existingErr.message)) {
       return NextResponse.json(
-        { error: "Kolonnen 'username' mangler på users. Kør supabase/migrations/004_child_username.sql i Supabase SQL Editor." },
+        { error: "The 'username' column is missing on users. Run supabase/migrations/004_child_username.sql in Supabase SQL Editor." },
         { status: 503 }
       );
     }
-    console.error("[create-child] Error checking existing username:", existingErr);
-    return NextResponse.json({ 
-      error: existingErr.message,
-      details: "Fejl ved tjek af eksisterende brugernavn"
-    }, { status: 500 });
+    return NextResponse.json({ error: existingErr.message }, { status: 500 });
   }
-  
   if (existing) {
-    console.log(`[create-child] Username ${username} already exists. Existing user:`, {
-      id: existing.id,
-      username: existing.username,
-      first_name: existing.first_name,
-      surname: existing.surname
-    });
     const suggested = suggestAlternatives(first_name, surname);
     return NextResponse.json(
       {
-        error: "En konto med dette navn findes allerede. For dit barns sikkerhed kræver vi deres rigtige fornavn og efternavn.",
+        error: "An account with this name already exists. For your child's security we require their real first name and surname.",
         code: "NAME_TAKEN",
-        message: "Behold det rigtige navn og gør det unikt ved at tilføje bynavnet, et nummer eller et kaldenavn efter efternavnet (f.eks. Jensen København, Jensen 2 eller Jensen AJ).",
+        message: "Keep the real name and make it unique by adding the city name, a number, or a nickname after the surname (e.g. Jensen Copenhagen, Jensen 2, or Jensen AJ).",
         suggestedNames: suggested.map((s) => s.displayName),
         suggested: suggested.map(({ first_name: fn, surname: sn, displayName: dn, hint: h }) => ({ first_name: fn, surname: sn, displayName: dn, hint: h })),
-        debug: {
-          searchedUsername: username,
-          existingUserId: existing.id,
-          existingUsername: existing.username
-        }
       },
       { status: 409 }
     );
   }
-  
-  console.log(`[create-child] Username ${username} is available, proceeding with child creation`);
 
   const syntheticEmail = `child-${crypto.randomUUID()}@family.local`;
 
@@ -206,7 +182,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: createErr.message }, { status: 400 });
   }
   if (!newAuthUser.user) {
-    return NextResponse.json({ error: "Kunne ikke oprette bruger" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to create user" }, { status: 500 });
   }
 
   const childId = newAuthUser.user.id;
@@ -231,7 +207,7 @@ export async function POST(request: NextRequest) {
       const { error: fallbackErr } = await admin.from("users").update(fallbackUpdate).eq("id", childId);
       if (fallbackErr) {
         return NextResponse.json(
-          { error: "Manglende kolonner på users. Kør migrations 004, 005, 006 og 011 (username, first_name, surname, avatar_url, is_child) i Supabase SQL Editor." },
+          { error: "Missing columns on users. Run migrations 004, 005, 006, and 011 (username, first_name, surname, avatar_url, is_child) in Supabase SQL Editor." },
           { status: 503 }
         );
       }
@@ -242,7 +218,7 @@ export async function POST(request: NextRequest) {
       }
     } else if (/username|schema cache|column/i.test(updateErr.message)) {
       return NextResponse.json(
-        { error: "Manglende kolonner på users. Kør migrations 004, 005, 006 og 011 i Supabase SQL Editor." },
+        { error: "Missing columns on users. Run migrations 004, 005, 006, and 011 in Supabase SQL Editor." },
         { status: 503 }
       );
     } else {
@@ -250,44 +226,17 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Try to insert with child_pin first, fallback without it if column doesn't exist
-  let linkInsertData: {
-    parent_id: string;
-    child_id: string;
-    surveillance_level: string;
-    child_pin?: string;
-  } = {
+  const { error: linkErr } = await admin.from("parent_child_links").insert({
     parent_id: parentUser.id,
     child_id: childId,
     surveillance_level: surveillance_level,
-    child_pin: pin, // Store PIN for later retrieval
-  };
-
-  let { error: linkErr } = await admin.from("parent_child_links").insert(linkInsertData);
-
-  // If child_pin column doesn't exist, try without it
-  if (linkErr && /child_pin|schema cache|column/i.test(linkErr.message)) {
-    console.warn("[create-child] child_pin column missing - inserting without PIN. Run migration 025_add_child_pin.sql");
-    // Remove child_pin and try again
-    delete linkInsertData.child_pin;
-    const { error: retryErr } = await admin.from("parent_child_links").insert(linkInsertData);
-    if (retryErr) {
-      linkErr = retryErr;
-    } else {
-      linkErr = null; // Success without PIN
-    }
-  }
+  });
 
   if (linkErr) {
     if (linkErr.code === "23505") {
-      return NextResponse.json({ error: "Barnet er allerede tilknyttet" }, { status: 409 });
+      return NextResponse.json({ error: "Child is already linked" }, { status: 409 });
     }
-    return NextResponse.json({ 
-      error: linkErr.message,
-      hint: /child_pin|schema cache|column/i.test(linkErr.message) 
-        ? "Kør migration 025_add_child_pin.sql i Supabase SQL Editor for at gemme PIN." 
-        : undefined
-    }, { status: 500 });
+    return NextResponse.json({ error: linkErr.message }, { status: 500 });
   }
 
   // Ensure bucket exists (create if missing), then upload child photo. Roll back child if upload fails.
@@ -311,7 +260,7 @@ export async function POST(request: NextRequest) {
     const detail = uploadErr.message || String(uploadErr);
     return NextResponse.json(
       {
-        error: "Kunne ikke uploade foto. Prøv igen. Sørg for at Storage er aktiveret i dit Supabase projekt.",
+        error: "Failed to upload photo. Please try again. Make sure Storage is enabled in your Supabase project.",
         detail: process.env.NODE_ENV === "development" ? detail : undefined,
       },
       { status: 500 }
@@ -337,7 +286,7 @@ export async function POST(request: NextRequest) {
     
     if (avatarUpdateErr && !/avatar_url|schema cache|column/i.test(avatarUpdateErr.message)) {
       return NextResponse.json(
-        { ok: true, child_id: childId, username, displayName: toDisplayName(first_name, surname), error: "Foto uploadet men kunne ikke gemme profil link.", avatarUrl: manualUrl },
+        { ok: true, child_id: childId, username, displayName: toDisplayName(first_name, surname), error: "Photo uploaded but could not save profile link.", avatarUrl: manualUrl },
         { status: 200 }
       );
     }
@@ -388,7 +337,7 @@ export async function POST(request: NextRequest) {
     displayName,
     invitationLink: invitationLink || undefined,
     message: invitationLink
-      ? "Børnekonto oprettet. Del invitationslinket med dit barn så de kan åbne appen og indtaste deres PIN."
-      : "Børnekonto oprettet. De kan logge ind på Barn login med deres fulde navn og PIN.",
+      ? "Child account created. Share the invitation link with your child so they can open the app and enter their PIN."
+      : "Child account created. They can log in at Child login with their full name and PIN.",
   });
 }

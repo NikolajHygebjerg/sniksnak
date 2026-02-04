@@ -6,6 +6,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { supabase } from "@/lib/supabase";
 import type { User } from "@supabase/supabase-js";
+import { initializePushNotifications } from "@/lib/push-notifications";
 
 type Chat = {
   id: string;
@@ -94,9 +95,28 @@ export default function ChatsPage() {
         (payload) => {
           const row = payload.new as MessageRow;
           if (!chatIdsRef.current.has(row.chat_id)) return;
-          setLastMessageByChat((prev) => ({ ...prev, [row.chat_id]: row }));
+          // Always update with the newest message (realtime updates should be newest)
+          setLastMessageByChat((prev) => {
+            const existing = prev[row.chat_id];
+            // Only update if this message is newer than existing
+            if (!existing || new Date(row.created_at) > new Date(existing.created_at)) {
+              return { ...prev, [row.chat_id]: row };
+            }
+            return prev;
+          });
           if (row.sender_id !== userRef.current) {
             setMessagesFromOthers((prev) => [...prev, row]);
+            
+            // Send push notification for new message from others
+            // Only if user is not currently viewing this chat
+            if (typeof window !== 'undefined') {
+              const currentPath = window.location.pathname;
+              const isViewingThisChat = currentPath === `/chats/${row.chat_id}`;
+              
+              if (!isViewingThisChat) {
+                sendPushNotificationForMessage(row, usersById[row.sender_id]);
+              }
+            }
           }
         }
       )
@@ -165,6 +185,18 @@ export default function ChatsPage() {
     return () => {
       supabase.removeChannel(channel);
     };
+  }, [user?.id]);
+
+  // Initialize push notifications when user is logged in
+  // This runs silently in the background - failures don't affect the app
+  useEffect(() => {
+    if (!user?.id) return;
+    
+    // Initialize push notifications (request permission, register service worker, subscribe)
+    // Run this asynchronously without blocking or showing errors to user
+    initializePushNotifications().catch(() => {
+      // Silent fail - push notifications are optional, badge still works
+    });
   }, [user?.id]);
 
   useEffect(() => {
@@ -265,9 +297,14 @@ export default function ChatsPage() {
               setFriends([]);
             }
           } else {
+            const TALERADGIVEREN_USER_ID = process.env.NEXT_PUBLIC_TALERADGIVEREN_USER_ID || "945d9864-7118-487b-addb-1dd1e821bc30";
             const approvedSet = new Set((approvedRows ?? []).map((r: { contact_user_id: string }) => r.contact_user_id));
             list = list.filter((c) => {
               const otherId = c.user1_id === uid ? c.user2_id : c.user1_id;
+              // Always show Talerådgiveren chat, even if not in approved contacts
+              if (otherId === TALERADGIVEREN_USER_ID) {
+                return true;
+              }
               return approvedSet.has(otherId);
             });
             if (!cancelled) {
@@ -654,8 +691,12 @@ export default function ChatsPage() {
 
       if (!cancelled && messagesRes.data) {
         const byChat: Record<string, MessageRow> = {};
+        // Group messages by chat_id and keep only the most recent one per chat
         for (const m of messagesRes.data as MessageRow[]) {
-          if (!byChat[m.chat_id]) byChat[m.chat_id] = m;
+          const existing = byChat[m.chat_id];
+          if (!existing || new Date(m.created_at) > new Date(existing.created_at)) {
+            byChat[m.chat_id] = m;
+          }
         }
         setLastMessageByChat(byChat);
       }
@@ -683,7 +724,48 @@ export default function ChatsPage() {
     ).length;
   }
 
+  // Calculate total unread count across all chats
+  const totalUnreadCount = useMemo(() => {
+    return chats.reduce((total, chat) => total + getUnreadCount(chat.id), 0);
+  }, [chats, messagesFromOthers, lastReadByChat]);
+
+  // Function to send push notification for a new message
+  async function sendPushNotificationForMessage(
+    message: MessageRow,
+    sender: UserRow | undefined
+  ) {
+    try {
+      const senderName = otherUserLabel(sender);
+      const messagePreview = message.content 
+        ? (message.content.length > 50 ? message.content.slice(0, 50) + "..." : message.content)
+        : "Ny besked";
+
+      // Call backend API to send push notification
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) return;
+
+      await fetch("/api/push/send", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          title: `Ny besked fra ${senderName}`,
+          body: messagePreview,
+          chatId: message.chat_id,
+          url: `/chats/${message.chat_id}`,
+          tag: `chat-${message.chat_id}`,
+        }),
+      });
+    } catch (error) {
+      console.error("Error sending push notification:", error);
+      // Don't show error to user - push notifications are optional
+    }
+  }
+
   // Sort chats by last message timestamp (most recent first)
+  // Always shows chats with newest messages at the top
   const sortedChats = useMemo(() => {
     return [...chats].sort((a, b) => {
       const lastMsgA = lastMessageByChat[a.id];
@@ -691,15 +773,19 @@ export default function ChatsPage() {
       
       // If both have messages, sort by message timestamp (newest first)
       if (lastMsgA && lastMsgB) {
-        return new Date(lastMsgB.created_at).getTime() - new Date(lastMsgA.created_at).getTime();
+        const timeA = new Date(lastMsgA.created_at).getTime();
+        const timeB = new Date(lastMsgB.created_at).getTime();
+        return timeB - timeA; // Newest first
       }
       
-      // If only one has messages, prioritize it
+      // If only one has messages, prioritize it (chats with messages go to top)
       if (lastMsgA && !lastMsgB) return -1;
       if (!lastMsgA && lastMsgB) return 1;
       
       // If neither has messages, sort by chat creation date (newest first)
-      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      const chatTimeA = new Date(a.created_at).getTime();
+      const chatTimeB = new Date(b.created_at).getTime();
+      return chatTimeB - chatTimeA; // Newest first
     });
   }, [chats, lastMessageByChat]);
 
@@ -1011,19 +1097,27 @@ export default function ChatsPage() {
       {/* Bottom Navigation Bar - Only for children */}
       {isChild && (
         <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 safe-area-inset-bottom z-50">
-          <div className="max-w-2xl mx-auto flex items-center justify-around px-2 py-2">
+          <div className="max-w-2xl mx-auto flex items-center justify-around px-2 py-1">
             <Link
               href="/chats"
-              className={`flex flex-col items-center justify-center px-3 py-2 min-h-[60px] min-w-[60px] rounded-lg transition-colors ${
+              className={`relative flex flex-col items-center justify-center px-2 py-1 min-h-[48px] min-w-[48px] rounded-lg transition-colors ${
                 isActive("/chats") ? "text-[#E0785B]" : "text-gray-400"
               }`}
-              aria-label="Chat"
+              aria-label={`Chat${totalUnreadCount > 0 ? `, ${totalUnreadCount} ulæste` : ""}`}
             >
-                    <Image src="/chaticon.svg" alt="" width={48} height={48} className="w-12 h-12" />
+              <Image src="/chaticon.svg" alt="" width={48} height={48} className="w-12 h-12" />
+              {totalUnreadCount > 0 && (
+                <span
+                  className="absolute top-1 right-1 flex-shrink-0 rounded-full bg-red-500 text-white text-xs font-bold min-w-[20px] h-5 inline-flex items-center justify-center px-1.5 border-2 border-white"
+                  aria-label={`${totalUnreadCount} ulæste beskeder`}
+                >
+                  {totalUnreadCount > 99 ? "99+" : totalUnreadCount}
+                </span>
+              )}
             </Link>
             <Link
               href="/groups"
-              className={`flex flex-col items-center justify-center px-3 py-2 min-h-[60px] min-w-[60px] rounded-lg transition-colors ${
+              className={`flex flex-col items-center justify-center px-2 py-1 min-h-[48px] min-w-[48px] rounded-lg transition-colors ${
                 isActive("/groups") ? "text-[#E0785B]" : "text-gray-400"
               }`}
               aria-label="Grupper"
@@ -1032,7 +1126,7 @@ export default function ChatsPage() {
             </Link>
             <Link
               href="/chats/new"
-              className={`flex flex-col items-center justify-center px-3 py-2 min-h-[60px] min-w-[60px] rounded-lg transition-colors ${
+              className={`flex flex-col items-center justify-center px-2 py-1 min-h-[48px] min-w-[48px] rounded-lg transition-colors ${
                 isActive("/chats/new") ? "text-[#E0785B]" : "text-gray-400"
               }`}
               aria-label="Find venner"
@@ -1042,7 +1136,7 @@ export default function ChatsPage() {
             <button
               type="button"
               onClick={handleLogout}
-              className="flex flex-col items-center justify-center px-3 py-2 min-h-[60px] min-w-[60px] rounded-lg transition-colors text-gray-400 hover:text-[#E0785B] focus:outline-none focus:ring-2 focus:ring-[#E0785B]"
+              className="flex flex-col items-center justify-center px-2 py-1 min-h-[48px] min-w-[48px] rounded-lg transition-colors text-gray-400 hover:text-[#E0785B] focus:outline-none focus:ring-2 focus:ring-[#E0785B]"
               aria-label="Indstillinger"
             >
                     <Image src="/logout.svg" alt="" width={48} height={48} className="w-12 h-12" />

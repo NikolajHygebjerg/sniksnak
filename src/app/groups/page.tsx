@@ -6,6 +6,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { supabase } from "@/lib/supabase";
 import type { User } from "@supabase/supabase-js";
+import UnreadBadge from "@/components/UnreadBadge";
 
 type Group = {
   id: string;
@@ -94,7 +95,16 @@ export default function GroupsPage() {
         const data = await res.json();
         if (cancelled) return;
 
-        setGroups(data.groups || []);
+        if (data.error) {
+          console.error("Error from groups/list API:", data.error);
+          setError(data.error || "Failed to load groups");
+          setLoading(false);
+          return;
+        }
+
+        const groupsList = data.groups || [];
+        console.log("Loaded groups:", groupsList.length, groupsList.map(g => ({ id: g.id, name: g.name, created_by: g.created_by })));
+        setGroups(groupsList);
         setLoading(false);
       } catch (err) {
         if (cancelled) return;
@@ -159,7 +169,7 @@ export default function GroupsPage() {
             {groups.map((group) => (
               <Link
                 key={group.id}
-                href={`/groups/${group.id}`}
+                href={`/groups/${group.id}/chat`}
                 className="block rounded-xl border border-gray-200 bg-[#E2F5E6] p-4 hover:bg-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-inset focus:ring-[#E0785B] transition touch-manipulation"
               >
                 <div className="flex items-center gap-4">
@@ -199,28 +209,30 @@ export default function GroupsPage() {
       {/* Bottom Navigation Bar - Only for children */}
       {isChild && (
         <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 safe-area-inset-bottom z-50">
-          <div className="max-w-2xl mx-auto flex items-center justify-around px-2 py-2">
+          <div className="max-w-2xl mx-auto flex items-center justify-around px-2 py-1">
             <Link
               href="/chats"
-              className={`flex flex-col items-center justify-center px-3 py-2 min-h-[60px] min-w-[60px] rounded-lg transition-colors ${
+              className={`relative flex flex-col items-center justify-center px-2 py-1 min-h-[48px] min-w-[48px] rounded-lg transition-colors ${
                 isActive("/chats") ? "text-[#E0785B]" : "text-gray-400"
               }`}
               aria-label="Chat"
             >
               <Image src="/chaticon.svg" alt="" width={48} height={48} className="w-12 h-12" />
+              <UnreadBadge userId={user?.id ?? null} />
             </Link>
             <Link
               href="/groups"
-              className={`flex flex-col items-center justify-center px-3 py-2 min-h-[60px] min-w-[60px] rounded-lg transition-colors ${
+              className={`relative flex flex-col items-center justify-center px-2 py-1 min-h-[48px] min-w-[48px] rounded-lg transition-colors ${
                 isActive("/groups") ? "text-[#E0785B]" : "text-gray-400"
               }`}
               aria-label="Grupper"
             >
               <Image src="/groupsicon.svg" alt="" width={67} height={67} className="w-[67px] h-[67px]" />
+              <UnreadBadge userId={user?.id ?? null} />
             </Link>
             <Link
               href="/chats/new"
-              className={`flex flex-col items-center justify-center px-3 py-2 min-h-[60px] min-w-[60px] rounded-lg transition-colors ${
+              className={`flex flex-col items-center justify-center px-2 py-1 min-h-[48px] min-w-[48px] rounded-lg transition-colors ${
                 isActive("/chats/new") ? "text-[#E0785B]" : "text-gray-400"
               }`}
               aria-label="Find venner"
@@ -230,7 +242,7 @@ export default function GroupsPage() {
             <button
               type="button"
               onClick={handleLogout}
-              className="flex flex-col items-center justify-center px-3 py-2 min-h-[60px] min-w-[60px] rounded-lg transition-colors text-gray-400 hover:text-[#E0785B] focus:outline-none focus:ring-2 focus:ring-[#E0785B]"
+              className="flex flex-col items-center justify-center px-2 py-1 min-h-[48px] min-w-[48px] rounded-lg transition-colors text-gray-400 hover:text-[#E0785B] focus:outline-none focus:ring-2 focus:ring-[#E0785B]"
               aria-label="Indstillinger"
             >
               <Image src="/logout.svg" alt="" width={48} height={48} className="w-12 h-12" />

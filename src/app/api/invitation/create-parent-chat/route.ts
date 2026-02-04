@@ -29,13 +29,13 @@ export async function POST(request: NextRequest) {
   const authHeader = request.headers.get("authorization");
   const token = authHeader?.replace(/^Bearer\s+/i, "").trim();
   if (!token || !supabaseUrl) {
-    return NextResponse.json({ error: "Uautoriseret" }, { status: 401 });
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const anonClient = createClient(supabaseUrl, anonKey);
   const { data: { user: caller }, error: authErr } = await anonClient.auth.getUser(token);
   if (authErr || !caller) {
-    return NextResponse.json({ error: "Ugyldig session" }, { status: 401 });
+    return NextResponse.json({ error: "Invalid session" }, { status: 401 });
   }
 
   let invitedChildId: string;
@@ -43,15 +43,15 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     invitedChildId = typeof body?.invited_child_id === "string" ? body.invited_child_id.trim() : "";
     if (!invitedChildId) {
-      return NextResponse.json({ error: "Manglende invited_child_id" }, { status: 400 });
+      return NextResponse.json({ error: "Missing invited_child_id" }, { status: 400 });
     }
   } catch {
-    return NextResponse.json({ error: "Ugyldig JSON body" }, { status: 400 });
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
   const invitingUserId = caller.id;
   if (invitingUserId === invitedChildId) {
-    return NextResponse.json({ error: "Kan ikke invitere sig selv" }, { status: 400 });
+    return NextResponse.json({ error: "Cannot invite self" }, { status: 400 });
   }
 
   const admin = createServiceRoleClient();
@@ -66,13 +66,13 @@ export async function POST(request: NextRequest) {
   
   if (linkAErr) {
     console.error("Error finding Parent A:", linkAErr);
-    return NextResponse.json({ ok: false, error: "Fejl ved søgning efter inviterende barns forælder" }, { status: 500 });
+    return NextResponse.json({ ok: false, error: "Error finding inviting child's parent" }, { status: 500 });
   }
   
   const parentAId = linkA?.parent_id;
   if (!parentAId) {
     console.log(`⚠️ Inviting user ${invitingUserId} has no linked parent - parent chat not created`);
-    return NextResponse.json({ ok: false, message: "Inviterende bruger har ingen tilknyttet forælder; forældre chat ikke oprettet." });
+    return NextResponse.json({ ok: false, message: "Inviting user has no linked parent; parent chat not created." });
   }
 
   // Find Parent B (invited child's parent)
@@ -85,13 +85,13 @@ export async function POST(request: NextRequest) {
   
   if (linkBErr) {
     console.error("Error finding Parent B:", linkBErr);
-    return NextResponse.json({ ok: false, error: "Fejl ved søgning efter inviteret barns forælder" }, { status: 500 });
+    return NextResponse.json({ ok: false, error: "Error finding invited child's parent" }, { status: 500 });
   }
   
   const parentBId = linkB?.parent_id;
   if (!parentBId) {
     console.log(`⚠️ Invited child ${invitedChildId} has no linked parent - parent chat not created`);
-    return NextResponse.json({ ok: false, message: "Inviteret barn har ingen tilknyttet forælder; forældre chat ikke oprettet." });
+    return NextResponse.json({ ok: false, message: "Invited child has no linked parent; parent chat not created." });
   }
   
   console.log(`✅ Found parents: Parent A (${parentAId}) for child ${invitingUserId}, Parent B (${parentBId}) for child ${invitedChildId}`);
@@ -124,12 +124,12 @@ export async function POST(request: NextRequest) {
       
       if (insertSelfChatErr) {
         console.error("Error creating self-chat:", insertSelfChatErr);
-        return NextResponse.json({ error: insertSelfChatErr.message ?? "Kunne ikke oprette forældre chat" }, { status: 500 });
+        return NextResponse.json({ error: insertSelfChatErr.message ?? "Failed to create parent chat" }, { status: 500 });
       }
       
       if (!newSelfChat?.id) {
         console.error("Self-chat creation returned no ID");
-        return NextResponse.json({ error: "Kunne ikke oprette forældre chat - ingen ID returneret" }, { status: 500 });
+        return NextResponse.json({ error: "Failed to create parent chat - no ID returned" }, { status: 500 });
       }
       
       parentChatId = newSelfChat.id;
@@ -153,17 +153,17 @@ export async function POST(request: NextRequest) {
     
     if (childAErr || !childA) {
       console.error("Error fetching inviting child:", childAErr);
-      return NextResponse.json({ error: "Inviterende barn ikke fundet" }, { status: 404 });
+      return NextResponse.json({ error: "Inviting child not found" }, { status: 404 });
     }
     
     if (childBErr || !childB) {
       console.error("Error fetching invited child:", childBErr);
-      return NextResponse.json({ error: "Inviteret barn ikke fundet" }, { status: 404 });
+      return NextResponse.json({ error: "Invited child not found" }, { status: 404 });
     }
     
     const nameA = displayName(childA);
     const nameB = displayName(childB);
-    const introContent = `Hej! Dit barn ${nameA} vil gerne oprette forbindelse med mit barn ${nameB}. Du er velkommen til at chatte med mig her. Acceptér/afvis`;
+    const introContent = `Hi! Your child ${nameA} wants to connect with my child ${nameB}. Feel free to chat with me here. Accept/deny`;
     
     const { error: insertInvitationErr } = await admin
       .from("parent_invitation_chats")
@@ -220,7 +220,7 @@ export async function POST(request: NextRequest) {
 
   if (existingChatErr) {
     console.error("Error checking for existing parent chat:", existingChatErr);
-    return NextResponse.json({ error: "Fejl ved tjek for eksisterende chat" }, { status: 500 });
+    return NextResponse.json({ error: "Error checking for existing chat" }, { status: 500 });
   }
 
   let parentChatId: string;
@@ -236,12 +236,12 @@ export async function POST(request: NextRequest) {
     
     if (insertChatErr) {
       console.error("Error creating parent chat:", insertChatErr);
-      return NextResponse.json({ error: insertChatErr.message ?? "Kunne ikke oprette forældre chat" }, { status: 500 });
+      return NextResponse.json({ error: insertChatErr.message ?? "Failed to create parent chat" }, { status: 500 });
     }
     
     if (!newChat?.id) {
       console.error("Parent chat creation returned no ID");
-      return NextResponse.json({ error: "Kunne ikke oprette forældre chat - ingen ID returneret" }, { status: 500 });
+      return NextResponse.json({ error: "Failed to create parent chat - no ID returned" }, { status: 500 });
     }
     
     parentChatId = newChat.id;
@@ -262,20 +262,20 @@ export async function POST(request: NextRequest) {
   const { data: childA, error: childAErr } = await admin.from("users").select("id, email, username, first_name, surname").eq("id", invitingUserId).maybeSingle();
   const { data: childB, error: childBErr } = await admin.from("users").select("id, email, username, first_name, surname").eq("id", invitedChildId).maybeSingle();
   
-    if (childAErr || !childA) {
-      console.error("Error fetching inviting child:", childAErr);
-      return NextResponse.json({ error: "Inviterende barn ikke fundet" }, { status: 404 });
-    }
-    
-    if (childBErr || !childB) {
-      console.error("Error fetching invited child:", childBErr);
-      return NextResponse.json({ error: "Inviteret barn ikke fundet" }, { status: 404 });
-    }
+  if (childAErr || !childA) {
+    console.error("Error fetching inviting child:", childAErr);
+    return NextResponse.json({ error: "Inviting child not found" }, { status: 404 });
+  }
+  
+  if (childBErr || !childB) {
+    console.error("Error fetching invited child:", childBErr);
+    return NextResponse.json({ error: "Invited child not found" }, { status: 404 });
+  }
   const nameA = displayName(childA);
   const nameB = displayName(childB);
 
-  // Intro message format: "Hej! Dit barn [nameA] vil gerne oprette forbindelse med mit barn [nameB]. Du er velkommen til at chatte med mig her. Acceptér/afvis"
-  const introContent = `Hej! Dit barn ${nameA} vil gerne oprette forbindelse med mit barn ${nameB}. Du er velkommen til at chatte med mig her. Acceptér/afvis`;
+  // Intro message format: "Hi! Your child [nameA] wants to connect with my child [nameB]. Feel free to chat with me here. Accept/deny"
+  const introContent = `Hi! Your child ${nameA} wants to connect with my child ${nameB}. Feel free to chat with me here. Accept/deny`;
 
   const { error: insertInvitationErr } = await admin
     .from("parent_invitation_chats")

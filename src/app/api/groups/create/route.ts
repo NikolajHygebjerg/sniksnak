@@ -16,17 +16,17 @@ export async function POST(request: NextRequest) {
   const authHeader = request.headers.get("authorization");
   const token = authHeader?.replace("Bearer ", "").trim();
   if (!token) {
-    return NextResponse.json({ error: "Uautoriseret" }, { status: 401 });
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   if (!supabaseUrl) {
-    return NextResponse.json({ error: "Server konfigurationsfejl" }, { status: 500 });
+    return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
   }
 
   const client = createClient(supabaseUrl, anonKey);
   const { data: { user }, error: authErr } = await client.auth.getUser(token);
   if (authErr || !user) {
-    return NextResponse.json({ error: "Ugyldig session" }, { status: 401 });
+    return NextResponse.json({ error: "Invalid session" }, { status: 401 });
   }
 
   // Verify user is a child (check both is_child flag and username)
@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
 
   if (userErr) {
     console.error("Error checking user:", userErr);
-    return NextResponse.json({ error: "Kunne ikke verificere bruger" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to verify user" }, { status: 500 });
   }
 
   // Check if user is a child - either has is_child=true OR has a username
@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
       is_child: userData?.is_child,
       username: userData?.username,
     });
-    return NextResponse.json({ error: "Kun børn kan oprette grupper" }, { status: 403 });
+    return NextResponse.json({ error: "Only children can create groups" }, { status: 403 });
   }
 
   const contentType = request.headers.get("content-type") ?? "";
@@ -76,16 +76,16 @@ export async function POST(request: NextRequest) {
       const body = await request.json();
       name = typeof body?.name === "string" ? body.name.trim() : "";
     } catch {
-      return NextResponse.json({ error: "Ugyldig request body" }, { status: 400 });
+      return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
     }
   }
 
   if (!name || name.length < 1) {
-    return NextResponse.json({ error: "Gruppenavn er påkrævet" }, { status: 400 });
+    return NextResponse.json({ error: "Group name is required" }, { status: 400 });
   }
 
   if (name.length > 50) {
-    return NextResponse.json({ error: "Gruppenavn skal være 50 tegn eller mindre" }, { status: 400 });
+    return NextResponse.json({ error: "Group name must be 50 characters or less" }, { status: 400 });
   }
 
   let avatarUrl: string | null = null;
@@ -105,7 +105,7 @@ export async function POST(request: NextRequest) {
 
       if (uploadErr) {
         console.error("Error uploading avatar:", uploadErr);
-        return NextResponse.json({ error: "Kunne ikke uploade avatar" }, { status: 500 });
+        return NextResponse.json({ error: "Failed to upload avatar" }, { status: 500 });
       }
 
       const { data: { publicUrl } } = admin.storage
@@ -152,7 +152,7 @@ export async function POST(request: NextRequest) {
 
   if (groupErr || !group) {
     console.error("Error creating group:", groupErr);
-    return NextResponse.json({ error: groupErr?.message || "Kunne ikke oprette gruppe" }, { status: 500 });
+    return NextResponse.json({ error: groupErr?.message || "Failed to create group" }, { status: 500 });
   }
 
   // Add creator as admin member
@@ -182,15 +182,15 @@ export async function POST(request: NextRequest) {
     if (memberErr?.code === "42P01" || memberErr?.message?.includes("does not exist")) {
       await admin.from("groups").delete().eq("id", group.id);
       return NextResponse.json({ 
-        error: "Grupper funktion ikke initialiseret. Kør migration 021_create_groups.sql" 
+        error: "Groups feature not initialized. Please run migration 021_create_groups.sql" 
       }, { status: 500 });
     }
     
     // Try to delete the group if member insertion fails
     await admin.from("groups").delete().eq("id", group.id);
     return NextResponse.json({ 
-      error: "Kunne ikke tilføje opretter til gruppe",
-      details: memberErr?.message || "Ukendt fejl"
+      error: "Failed to add creator to group",
+      details: memberErr?.message || "Unknown error"
     }, { status: 500 });
   }
   

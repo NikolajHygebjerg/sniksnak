@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/lib/supabase-server";
 import { scanMessageForRisk } from "@/lib/keyword-scanner";
+import { getInitialTaleradgiverenMessage, getFollowUpTaleradgiverenResponse } from "@/lib/taleradgiveren-responses";
 
 /**
  * API endpoint to scan a message for safety keywords and flag if needed
@@ -16,7 +17,7 @@ export async function POST(request: NextRequest) {
       body = await request.json();
     } catch (parseError) {
       console.error("⚠️ [Keyword Scanner] Failed to parse request body:", parseError);
-      return NextResponse.json({ ok: false, error: "Ugyldig JSON" }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
     }
 
     const { messageId, childId, messageText, chatId } = body || {};
@@ -24,7 +25,7 @@ export async function POST(request: NextRequest) {
     // Validate input
     if (!messageId || !childId || typeof messageText !== "string") {
       console.error("⚠️ [Keyword Scanner] Invalid input:", { messageId, childId, messageText, chatId });
-      return NextResponse.json({ ok: false, error: "Ugyldigt input" }, { status: 400 });
+      return NextResponse.json({ ok: false, error: "Invalid input" }, { status: 400 });
     }
 
     // Scan the message
@@ -53,6 +54,103 @@ export async function POST(request: NextRequest) {
       console.error("⚠️ [Keyword Scanner] Failed to insert flagged message:", insertError);
       // Don't fail the request - logging error is acceptable
       return NextResponse.json({ ok: false, error: insertError.message }, { status: 500 });
+    }
+
+    // Send message from Talerådgiveren to the child
+    try {
+      const TALERADGIVEREN_USER_ID = process.env.TALERADGIVEREN_USER_ID || "945d9864-7118-487b-addb-1dd1e821bc30";
+      
+      // Check if Talerådgiveren user exists
+      const { data: taleradgiverenUser, error: taleradgiverenUserError } = await admin
+        .from("users")
+        .select("id, email")
+        .eq("id", TALERADGIVEREN_USER_ID)
+        .maybeSingle();
+
+      if (taleradgiverenUserError) {
+        console.error("⚠️ [Keyword Scanner] Error checking Talerådgiveren user:", taleradgiverenUserError);
+      } else if (!taleradgiverenUser) {
+        console.warn(`⚠️ [Keyword Scanner] Talerådgiveren user not found with ID: ${TALERADGIVEREN_USER_ID}`);
+        console.warn("⚠️ [Keyword Scanner] Please create the Talerådgiveren user in Supabase");
+      } else {
+        // Get child's name for personalization
+        const { data: childData } = await admin
+          .from("users")
+          .select("first_name, surname, username")
+          .eq("id", childId)
+          .maybeSingle();
+
+        const childName = childData
+          ? (childData.first_name && childData.surname
+              ? `${childData.first_name} ${childData.surname}`
+              : childData.username || undefined)
+          : undefined;
+
+        // Create or find chat between child and Talerådgiveren
+        const [u1, u2] = [childId, TALERADGIVEREN_USER_ID].sort();
+        let { data: taleradgiverenChat } = await admin
+          .from("chats")
+          .select("id")
+          .eq("user1_id", u1)
+          .eq("user2_id", u2)
+          .maybeSingle();
+
+        if (!taleradgiverenChat) {
+          const { data: newChat, error: chatErr } = await admin
+            .from("chats")
+            .insert({ user1_id: u1, user2_id: u2 })
+            .select("id")
+            .single();
+          
+          if (chatErr) {
+            console.error("⚠️ [Keyword Scanner] Failed to create Talerådgiveren chat:", chatErr);
+          } else {
+            taleradgiverenChat = newChat;
+            console.log(`✅ [Keyword Scanner] Created Talerådgiveren chat: ${newChat.id}`);
+          }
+        }
+
+        if (taleradgiverenChat) {
+          // Check if we've already sent an initial message in this chat recently (within last hour)
+          const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+          const { data: existingMessage } = await admin
+            .from("messages")
+            .select("id, created_at")
+            .eq("chat_id", taleradgiverenChat.id)
+            .eq("sender_id", TALERADGIVEREN_USER_ID)
+            .gte("created_at", oneHourAgo)
+            .order("created_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          // Only send initial message if we haven't sent one recently
+          const shouldSendInitial = !existingMessage;
+
+          if (shouldSendInitial) {
+            // Get initial message from Talerådgiveren
+            const initialMessage = getInitialTaleradgiverenMessage(match.category, childName);
+
+            const { error: msgErr } = await admin
+              .from("messages")
+              .insert({
+                chat_id: taleradgiverenChat.id,
+                sender_id: TALERADGIVEREN_USER_ID,
+                content: initialMessage,
+              });
+
+            if (msgErr) {
+              console.error("⚠️ [Keyword Scanner] Failed to send Talerådgiveren message:", msgErr);
+            } else {
+              console.log(`✅ [Keyword Scanner] Sent initial Talerådgiveren message to child ${childId}`);
+            }
+          } else {
+            console.log(`🔍 [Keyword Scanner] Talerådgiveren already sent a message recently, skipping initial message`);
+          }
+        }
+      }
+    } catch (taleradgiverenError: any) {
+      // Don't fail the request if Talerådgiveren message fails
+      console.error("⚠️ [Keyword Scanner] Error sending Talerådgiveren message:", taleradgiverenError);
     }
 
     // Notify parent of the recipient child (the child who received the message)

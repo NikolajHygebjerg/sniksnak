@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json({ error: "Ugyldig JSON body" }, { status: 400 });
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
   const { message_id, flagged_by, reason } = body;
@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
   // Validate required fields
   if (!message_id || !flagged_by) {
     return NextResponse.json(
-      { error: "Manglende påkrævede felter: message_id og flagged_by" },
+      { error: "Missing required fields: message_id and flagged_by" },
       { status: 400 }
     );
   }
@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
     if (insertError) {
       console.error("[moderation/flag] Failed to insert flag:", insertError);
       return NextResponse.json(
-        { error: "Kunne ikke oprette flag", details: insertError.message },
+        { error: "Failed to create flag", details: insertError.message },
         { status: 500 }
       );
     }

@@ -13,12 +13,12 @@ export async function GET(
 ) {
   const { token } = await params;
   if (!token) {
-    return NextResponse.json({ error: "Token mangler" }, { status: 400 });
+    return NextResponse.json({ error: "Missing token" }, { status: 400 });
   }
 
   const payload = verifyInviteToken(token);
   if (!payload) {
-    return NextResponse.json({ error: "Ugyldigt eller udløbet invitationslink" }, { status: 404 });
+    return NextResponse.json({ error: "Invalid or expired invitation link" }, { status: 404 });
   }
 
   const supabase = createServiceRoleClient();
@@ -31,19 +31,19 @@ export async function GET(
   if (error) {
     if (/first_name|surname|schema cache|column/i.test(error.message)) {
       return NextResponse.json(
-        { error: "Manglende kolonner på users. Kør supabase/migrations/005_child_firstname_surname.sql i Supabase SQL Editor." },
+        { error: "Missing columns on users. Run supabase/migrations/005_child_firstname_surname.sql in Supabase SQL Editor." },
         { status: 503 }
       );
     }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
   if (!user) {
-    return NextResponse.json({ error: "Børnekonto ikke fundet" }, { status: 404 });
+    return NextResponse.json({ error: "Child account not found" }, { status: 404 });
   }
 
-  const first_name = (user as { first_name?: string }).first_name ?? (user as { username?: string }).username ?? "dit barn";
+  const first_name = (user as { first_name?: string }).first_name ?? (user as { username?: string }).username ?? "your child";
   return NextResponse.json({
-    first_name: String(first_name).trim() || "dit barn",
+    first_name: String(first_name).trim() || "your child",
     email: user.email,
   });
 }

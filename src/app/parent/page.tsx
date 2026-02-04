@@ -9,6 +9,8 @@ import Link from "next/link";
 import Image from "next/image";
 import { supabase } from "@/lib/supabase";
 import type { User } from "@supabase/supabase-js";
+import { initializePushNotifications } from "@/lib/push-notifications";
+import UnreadBadge from "@/components/UnreadBadge";
 
 type Chat = {
   id: string;
@@ -66,6 +68,18 @@ export default function ParentPage() {
 
   userRef.current = user?.id ?? null;
   chatIdsRef.current = new Set(chats.map((c) => c.id));
+
+  // Initialize push notifications when user is logged in
+  // This runs silently in the background - failures don't affect the app
+  useEffect(() => {
+    if (!user?.id) return;
+    
+    // Initialize push notifications (request permission, register service worker, subscribe)
+    // Run this asynchronously without blocking or showing errors to user
+    initializePushNotifications().catch(() => {
+      // Silent fail - push notifications are optional, badge still works
+    });
+  }, [user?.id]);
 
   // Realtime: new messages in any of our chats → update last message + unread
   useEffect(() => {
@@ -229,6 +243,11 @@ export default function ParentPage() {
     ).length;
   }
 
+  // Calculate total unread count across all chats
+  const totalUnreadCount = useMemo(() => {
+    return chats.reduce((total, chat) => total + getUnreadCount(chat.id), 0);
+  }, [chats, messagesFromOthers, lastReadByChat]);
+
   // Sort chats by last message timestamp (most recent first)
   const sortedChats = useMemo(() => {
     return [...chats].sort((a, b) => {
@@ -368,19 +387,27 @@ export default function ParentPage() {
 
       {/* Bottom Navigation Bar for Parents */}
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 safe-area-inset-bottom z-50">
-        <div className="max-w-2xl mx-auto flex items-center justify-around px-2 py-2">
+        <div className="max-w-2xl mx-auto flex items-center justify-around px-2 py-1">
           <Link
             href="/parent"
-            className={`flex flex-col items-center justify-center px-3 py-2 min-h-[60px] min-w-[60px] rounded-lg transition-colors ${
+            className={`relative flex flex-col items-center justify-center px-2 py-1 min-h-[48px] min-w-[48px] rounded-lg transition-colors ${
               isActive("/parent") ? "text-[#E0785B]" : "text-gray-400"
             }`}
-            aria-label="Chat"
+            aria-label={`Chat${totalUnreadCount > 0 ? `, ${totalUnreadCount} ulæste` : ""}`}
           >
             <Image src="/chaticon.svg" alt="" width={48} height={48} className="w-12 h-12" />
+            {totalUnreadCount > 0 && (
+              <span
+                className="absolute top-1 right-1 flex-shrink-0 rounded-full bg-red-500 text-white text-xs font-bold min-w-[20px] h-5 inline-flex items-center justify-center px-1.5 border-2 border-white"
+                aria-label={`${totalUnreadCount} ulæste beskeder`}
+              >
+                {totalUnreadCount > 99 ? "99+" : totalUnreadCount}
+              </span>
+            )}
           </Link>
           <Link
             href="/parent/create-child"
-            className={`flex flex-col items-center justify-center px-3 py-2 min-h-[60px] min-w-[60px] rounded-lg transition-colors ${
+            className={`flex flex-col items-center justify-center px-2 py-1 min-h-[48px] min-w-[48px] rounded-lg transition-colors ${
               isActive("/parent/create-child") ? "text-[#E0785B]" : "text-gray-400"
             }`}
             aria-label="Opret barn"
@@ -389,7 +416,7 @@ export default function ParentPage() {
           </Link>
           <Link
             href="/parent/children"
-            className={`flex flex-col items-center justify-center px-3 py-2 min-h-[60px] min-w-[60px] rounded-lg transition-colors ${
+            className={`flex flex-col items-center justify-center px-2 py-1 min-h-[48px] min-w-[48px] rounded-lg transition-colors ${
               isActive("/parent/children") ? "text-[#E0785B]" : "text-gray-400"
             }`}
             aria-label="Mine børn"
@@ -398,7 +425,7 @@ export default function ParentPage() {
           </Link>
           <Link
             href="/parent/settings"
-            className={`flex flex-col items-center justify-center px-3 py-2 min-h-[60px] min-w-[60px] rounded-lg transition-colors ${
+            className={`flex flex-col items-center justify-center px-2 py-1 min-h-[48px] min-w-[48px] rounded-lg transition-colors ${
               isActive("/parent/settings") ? "text-[#E0785B]" : "text-gray-400"
             }`}
             aria-label="Indstillinger"

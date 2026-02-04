@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         error:
-          "RESEND_API_KEY ikke sat. Tilføj til .env.local og kør: npm install resend",
+          "RESEND_API_KEY not set. Add to .env.local and run: npm install resend",
       },
       { status: 503 }
     );
@@ -30,13 +30,14 @@ export async function POST(request: NextRequest) {
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json({ error: "Ugyldig JSON body" }, { status: 400 });
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
   let recipient_email: string;
   let sender_email: string;
   let content_preview: string;
   let chat_id: string | undefined;
+  let storedRecipientId: string | undefined;
 
   if (body.record && body.table === "messages") {
     const record = body.record as {
@@ -46,7 +47,7 @@ export async function POST(request: NextRequest) {
     };
     if (!supabaseUrl || !supabaseServiceKey) {
       return NextResponse.json(
-        { error: "SUPABASE_SERVICE_ROLE_KEY og NEXT_PUBLIC_SUPABASE_URL påkrævet for webhook" },
+        { error: "SUPABASE_SERVICE_ROLE_KEY and NEXT_PUBLIC_SUPABASE_URL required for webhook" },
         { status: 503 }
       );
     }
@@ -57,13 +58,13 @@ export async function POST(request: NextRequest) {
       .eq("id", record.chat_id)
       .single();
     if (!chat) {
-      return NextResponse.json({ error: "Chat ikke fundet" }, { status: 404 });
+      return NextResponse.json({ error: "Chat not found" }, { status: 404 });
     }
     const recipientId =
       record.sender_id === chat.user1_id ? chat.user2_id : chat.user1_id;
     const { data: senderUser } = await supabase
       .from("users")
-      .select("email")
+      .select("email, first_name, surname, username")
       .eq("id", record.sender_id)
       .single();
     const { data: recipientUser } = await supabase
@@ -73,14 +74,15 @@ export async function POST(request: NextRequest) {
       .single();
     if (!recipientUser?.email) {
       return NextResponse.json(
-        { error: "Modtager bruger eller email ikke fundet" },
+        { error: "Recipient user or email not found" },
         { status: 404 }
       );
     }
     recipient_email = recipientUser.email;
-    sender_email = (senderUser?.email as string) ?? "Nogen";
+    sender_email = (senderUser?.email as string) ?? "Someone";
     content_preview = (record.content as string) ?? "";
     chat_id = record.chat_id;
+    storedRecipientId = recipientId;
   } else {
     const r = body as {
       recipient_email?: string;
@@ -90,7 +92,7 @@ export async function POST(request: NextRequest) {
     };
     if (!r.recipient_email || !r.sender_email) {
       return NextResponse.json(
-        { error: "recipient_email og sender_email er påkrævet" },
+        { error: "recipient_email and sender_email required" },
         { status: 400 }
       );
     }
@@ -105,22 +107,76 @@ export async function POST(request: NextRequest) {
   const chatPath = chat_id ? `/chats/${chat_id}` : "/chats";
   const preview =
     content_preview.slice(0, 100) + (content_preview.length > 100 ? "…" : "") ||
-    "Ny besked";
+    "New message";
 
   const { error } = await resend.emails.send({
     from: fromEmail,
     to: recipient_email,
-    subject: `Ny besked fra ${sender_email}`,
+    subject: `New message from ${sender_email}`,
     html: `
-      <p>Du har modtaget en ny besked fra <strong>${escapeHtml(sender_email)}</strong>.</p>
+      <p>You have a new message from <strong>${escapeHtml(sender_email)}</strong>.</p>
       <p>${escapeHtml(preview)}</p>
-      <p><a href="${appUrl}${chatPath}">Åbn chat</a></p>
+      <p><a href="${appUrl}${chatPath}">Open chat</a></p>
     `,
   });
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+
+  // Also send push notification if VAPID keys are configured
+  const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+  const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY;
+  
+  if (vapidPublicKey && vapidPrivateKey && chat_id && body.record && body.table === "messages") {
+    try {
+      const record = body.record as {
+        chat_id: string;
+        sender_id: string;
+        content?: string | null;
+      };
+      
+      // Get sender user info for notification
+      const { data: senderUser } = await supabase
+        .from("users")
+        .select("first_name, surname, username, email")
+        .eq("id", record.sender_id)
+        .single();
+
+      const senderName = senderUser?.first_name && senderUser?.surname
+        ? `${senderUser.first_name} ${senderUser.surname}`
+        : senderUser?.username || senderUser?.email || "Nogen";
+
+      const messagePreview = (record.content || "").slice(0, 100) + ((record.content?.length || 0) > 100 ? "…" : "") || "Ny besked";
+
+      // Send push notification to recipient
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+      const pushResponse = await fetch(`${appUrl}/api/push/send`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-service-key': supabaseServiceKey || '',
+        },
+        body: JSON.stringify({
+          userId: storedRecipientId,
+          title: `Ny besked fra ${senderName}`,
+          body: messagePreview,
+          chatId: chat_id,
+          url: `/chats/${chat_id}`,
+          tag: `chat-${chat_id}`,
+        }),
+      });
+
+      if (!pushResponse.ok) {
+        const errorText = await pushResponse.text();
+        console.warn('Push notification failed:', errorText);
+      }
+    } catch (pushError) {
+      // Don't fail the request if push notification fails
+      console.warn('Error sending push notification:', pushError);
+    }
+  }
+
   return NextResponse.json({ ok: true });
 }
 

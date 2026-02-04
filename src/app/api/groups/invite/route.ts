@@ -87,6 +87,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invitation already sent" }, { status: 400 });
   }
 
+  // Get group name for invitation message
+  const { data: groupData } = await admin
+    .from("groups")
+    .select("name")
+    .eq("id", groupId)
+    .maybeSingle();
+
+  const groupName = groupData?.name || "gruppen";
+
   // Create invitation
   const { data: invitation, error: inviteErr } = await admin
     .from("group_invitations")
@@ -102,6 +111,65 @@ export async function POST(request: NextRequest) {
   if (inviteErr || !invitation) {
     console.error("Error creating invitation:", inviteErr);
     return NextResponse.json({ error: inviteErr?.message || "Failed to create invitation" }, { status: 500 });
+  }
+
+  // Send invitation message in chat between inviter and invitee
+  // Find or create chat between the two users
+  const [user1Id, user2Id] = [user.id, friendId].sort();
+  let { data: chat } = await admin
+    .from("chats")
+    .select("id")
+    .eq("user1_id", user1Id)
+    .eq("user2_id", user2Id)
+    .is("group_id", null) // Only direct chats, not group chats
+    .maybeSingle();
+
+  if (!chat) {
+    // Create chat if it doesn't exist
+    const { data: newChat, error: chatErr } = await admin
+      .from("chats")
+      .insert({
+        user1_id: user1Id,
+        user2_id: user2Id,
+      })
+      .select("id")
+      .maybeSingle();
+
+    if (chatErr || !newChat) {
+      console.error("Error creating chat for invitation:", chatErr);
+      // Continue without sending message - invitation is still created
+    } else {
+      chat = newChat;
+    }
+  }
+
+  // Send invitation message if chat exists
+  if (chat?.id) {
+    // Get inviter's name for message
+    const { data: inviterData } = await admin
+      .from("users")
+      .select("first_name, surname, username")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    const inviterName = inviterData?.first_name && inviterData?.surname
+      ? `${inviterData.first_name} ${inviterData.surname}`
+      : inviterData?.username || "Nogen";
+
+    const invitationMessage = `GROUP_INVITATION:${invitation.id}:${groupId}:${groupName}:${inviterName}`;
+
+    const { error: msgErr } = await admin
+      .from("messages")
+      .insert({
+        chat_id: chat.id,
+        sender_id: user.id,
+        content: invitationMessage,
+      });
+
+    if (msgErr) {
+      console.error("Error sending invitation message:", msgErr);
+      // Don't fail the request - invitation is still created
+    }
   }
 
   return NextResponse.json({ ok: true, invitation });

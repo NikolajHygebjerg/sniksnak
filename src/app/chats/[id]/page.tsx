@@ -6,6 +6,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { supabase } from "@/lib/supabase";
 import type { User } from "@supabase/supabase-js";
+import UnreadBadge from "@/components/UnreadBadge";
 
 type Chat = {
   id: string;
@@ -126,6 +127,8 @@ export default function ChatDetailPage() {
   const [parentInvitation, setParentInvitation] = useState<ParentInvitationRow | null>(null);
   const [isInvitedParent, setIsInvitedParent] = useState(false);
   const [invitationActionId, setInvitationActionId] = useState<number | null>(null);
+  const [groupInvitation, setGroupInvitation] = useState<{ id: string; groupId: string; groupName: string; inviterName: string } | null>(null);
+  const [groupInvitationActionId, setGroupInvitationActionId] = useState<string | null>(null);
   const [showImagePicker, setShowImagePicker] = useState(false);
   const [parentLinks, setParentLinks] = useState<{ child_id: string; surveillance_level: string } | null>(null);
   const [selectedReaction, setSelectedReaction] = useState<string>("👍");
@@ -416,31 +419,36 @@ export default function ChatDetailPage() {
         setIsChild(isChildUser);
       }
       if (isChildUser) {
-        const { data: approved, error: approvedError } = await supabase
-          .from("parent_approved_contacts")
-          .select("contact_user_id")
-          .eq("child_id", uid)
-          .eq("contact_user_id", otherId)
-          .maybeSingle();
+        const TALERADGIVEREN_USER_ID = process.env.NEXT_PUBLIC_TALERADGIVEREN_USER_ID || "945d9864-7118-487b-addb-1dd1e821bc30";
         
-        if (cancelled) return;
-        
-        if (approvedError) {
-          // Safe error logging
-          try {
-            if (approvedError && typeof approvedError === "object" && Object.keys(approvedError).length > 0) {
-              console.error("Error checking approved contacts:", approvedError);
-            } else {
-              console.error("Unknown error occurred:", approvedError);
+        // Always allow access to Talerådgiveren chat
+        if (otherId !== TALERADGIVEREN_USER_ID) {
+          const { data: approved, error: approvedError } = await supabase
+            .from("parent_approved_contacts")
+            .select("contact_user_id")
+            .eq("child_id", uid)
+            .eq("contact_user_id", otherId)
+            .maybeSingle();
+          
+          if (cancelled) return;
+          
+          if (approvedError) {
+            // Safe error logging
+            try {
+              if (approvedError && typeof approvedError === "object" && Object.keys(approvedError).length > 0) {
+                console.error("Error checking approved contacts:", approvedError);
+              } else {
+                console.error("Unknown error occurred:", approvedError);
+              }
+            } catch (logErr) {
+              console.error("Error occurred but could not be logged:", String(approvedError || "Unknown"));
             }
-          } catch (logErr) {
-            console.error("Error occurred but could not be logged:", String(approvedError || "Unknown"));
           }
-        }
-        if (!approved) {
-          setError("This chat is waiting for your parent to accept this contact. They have been notified.");
-          setLoading(false);
-          return;
+          if (!approved) {
+            setError("This chat is waiting for your parent to accept this contact. They have been notified.");
+            setLoading(false);
+            return;
+          }
         }
       }
       if (cancelled) return;
@@ -494,7 +502,39 @@ export default function ChatDetailPage() {
         setError(messagesErr?.message || "Failed to load messages");
       } else {
         // Safe fallback for data
-        setMessages((messagesData ?? []) as Message[]);
+        const msgs = (messagesData ?? []) as Message[];
+        setMessages(msgs);
+        
+        // Check for group invitation messages
+        for (const msg of msgs) {
+          if (msg.content && msg.content.startsWith("GROUP_INVITATION:")) {
+            const parts = msg.content.split(":");
+            if (parts.length >= 5) {
+              const [, invitationId, groupId, groupName, inviterName] = parts;
+              // Check if this invitation is for the current user and is still pending
+              const { data: { session } } = await supabase.auth.getSession();
+              if (session?.user) {
+                const { data: invitation } = await supabase
+                  .from("group_invitations")
+                  .select("id, status, invited_user_id")
+                  .eq("id", invitationId)
+                  .eq("invited_user_id", session.user.id)
+                  .eq("status", "pending")
+                  .maybeSingle();
+                
+                if (invitation) {
+                  setGroupInvitation({
+                    id: invitationId,
+                    groupId,
+                    groupName,
+                    inviterName,
+                  });
+                  break;
+                }
+              }
+            }
+          }
+        }
       }
 
       // Phase 6: fetch flags for messages in this chat (for Flag button + visual indicator)
@@ -682,6 +722,16 @@ export default function ChatDetailPage() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // Scroll to bottom when chat loads and messages are ready
+  useEffect(() => {
+    if (!loading && messages.length > 0) {
+      // Use setTimeout to ensure DOM is ready
+      setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
+      }, 100);
+    }
+  }, [loading, messages.length]);
 
   async function handleSend(e: React.FormEvent) {
     e.preventDefault();
@@ -1119,6 +1169,75 @@ export default function ChatDetailPage() {
     else setParentInvitation((prev) => (prev ? { ...prev, status: "rejected" } : null));
   }
 
+  /** Accept group invitation */
+  async function handleAcceptGroupInvitation() {
+    if (!user || !groupInvitation || groupInvitationActionId !== null) return;
+    setGroupInvitationActionId(groupInvitation.id);
+    setError(null);
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        setError("No session token");
+        setGroupInvitationActionId(null);
+        return;
+      }
+
+      const res = await fetch("/api/groups/accept-invitation", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ invitationId: groupInvitation.id }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.error || "Failed to accept invitation");
+        setGroupInvitationActionId(null);
+        return;
+      }
+
+      // Update invitation status
+      setGroupInvitation(null);
+      setGroupInvitationActionId(null);
+      
+      // Redirect to group page
+      router.push(`/groups/${groupInvitation.groupId}`);
+    } catch (err) {
+      console.error("Error accepting group invitation:", err);
+      setError(err instanceof Error ? err.message : "An error occurred");
+      setGroupInvitationActionId(null);
+    }
+  }
+
+  /** Reject group invitation */
+  async function handleRejectGroupInvitation() {
+    if (!user || !groupInvitation || groupInvitationActionId !== null) return;
+    setGroupInvitationActionId(groupInvitation.id);
+    setError(null);
+
+    try {
+      const { error: updateErr } = await supabase
+        .from("group_invitations")
+        .update({ status: "rejected" })
+        .eq("id", groupInvitation.id);
+
+      if (updateErr) {
+        setError(updateErr.message);
+      } else {
+        setGroupInvitation(null);
+      }
+      setGroupInvitationActionId(null);
+    } catch (err) {
+      console.error("Error rejecting group invitation:", err);
+      setError(err instanceof Error ? err.message : "An error occurred");
+      setGroupInvitationActionId(null);
+    }
+  }
+
   /** Phase 6: insert flag and call moderation API placeholder */
   async function handleFlag(messageId: string) {
     if (!user) return;
@@ -1195,10 +1314,10 @@ export default function ChatDetailPage() {
   }
 
   return (
-    <main className="min-h-screen flex flex-col bg-[#E0785B] safe-area-inset pb-20" style={{ fontFamily: 'Arial, sans-serif' }}>
-      <div className="max-w-2xl mx-auto w-full flex flex-col flex-1 min-h-0 p-4 pb-6">
+    <main className="min-h-screen flex flex-col bg-[#E0785B] safe-area-inset" style={{ fontFamily: 'Arial, sans-serif' }}>
+      <div className="max-w-2xl mx-auto w-full flex flex-col flex-1 min-h-0 p-4" style={{ paddingBottom: isChild ? '65px' : '56px' }}>
         {/* Chat boks med runde hjørner og lysgrøn baggrund */}
-        <div className="flex-1 flex flex-col min-h-0 bg-[#E2F5E6] rounded-3xl overflow-hidden mb-4 pt-6">
+        <div className="flex-1 min-h-0 bg-[#E2F5E6] rounded-3xl mb-4 pt-6" style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', position: 'relative' }}>
           <header className="flex-shrink-0 flex items-center gap-3 sm:gap-4 px-4 pt-2 pb-3 sm:py-4 border-b border-gray-200 bg-[#E2F5E6] safe-area-inset-top">
             <Link
               href="/chats"
@@ -1250,9 +1369,10 @@ export default function ChatDetailPage() {
 
 
           <div
-            className="flex-1 overflow-y-auto p-4 pb-12 space-y-3 min-h-0"
+            className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0"
             role="log"
             aria-label="Chat messages"
+            style={{ paddingBottom: '80px' }}
           >
           {messages.length === 0 && (
             <p className="text-center text-gray-400 text-sm py-4" style={{ fontFamily: 'Arial, sans-serif' }}>
@@ -1276,23 +1396,28 @@ export default function ChatDetailPage() {
               msg.content.includes("wants to connect") || 
               msg.content.includes("Feel free to chat with me here")
             );
+            const isGroupInvitationMessage = msg.content && msg.content.startsWith("GROUP_INVITATION:");
             const showInvitationButtons = isIntroMessage && 
               parentInvitation && 
               parentInvitation.status === "pending" && 
               isInvitedParent;
+            const showGroupInvitationButtons = isGroupInvitationMessage && 
+              groupInvitation && 
+              groupInvitation.id && 
+              groupInvitationActionId === null;
             
             return (
               <div
                 key={msg.id}
-                className={`flex ${isMe ? "justify-end" : "justify-start"} ${showInvitationButtons ? "flex-col" : ""}`}
+                className={`flex ${isMe ? "justify-end" : "justify-start"} ${showInvitationButtons || showGroupInvitationButtons ? "flex-col" : ""}`}
               >
                 <div
                   className={`max-w-[85%] sm:max-w-[75%] rounded-2xl px-3 py-2 ${
                     isFlagged
                       ? "ring-2 ring-amber-500 bg-amber-50 text-gray-900 rounded-br-md"
                       : isMe
-                        ? "bg-[#E0785B] text-white rounded-br-md"
-                        : "bg-[#E2F5E6] text-gray-900 rounded-bl-md"
+                        ? "bg-gray-300 text-gray-900 rounded-br-md"
+                        : "bg-[#E0785B] text-white rounded-bl-md"
                   } ${isFlagged && isMe ? "!bg-amber-100" : ""}`}
                 >
                   {isImage && msg.attachment_url ? (
@@ -1332,13 +1457,17 @@ export default function ChatDetailPage() {
                   ) : null}
                   {(msg.content ?? "").trim() ? (
                     <p className="text-sm whitespace-pre-wrap break-words mt-1" style={{ fontFamily: 'Arial, sans-serif' }}>
-                      {renderMessageWithLinks(msg.content ?? "")}
+                      {isGroupInvitationMessage && groupInvitation ? (
+                        <>Du er inviteret til gruppen "{groupInvitation.groupName}" af {groupInvitation.inviterName}.</>
+                      ) : (
+                        renderMessageWithLinks(msg.content ?? "")
+                      )}
                     </p>
                   ) : null}
                   <div className="flex items-center justify-between gap-2 mt-1">
                     <p
                       className={`text-xs ${
-                        isMe && !isFlagged ? "text-blue-200" : "text-gray-500"
+                        isMe && !isFlagged ? "text-gray-600" : "text-gray-500"
                       }`}
                       style={{ fontFamily: 'Arial, sans-serif' }}
                     >
@@ -1453,6 +1582,28 @@ export default function ChatDetailPage() {
                     </button>
                   </div>
                 )}
+                {showGroupInvitationButtons && (
+                  <div className="mt-2 ml-0 flex gap-2 max-w-[85%] sm:max-w-[75%]">
+                    <button
+                      type="button"
+                      onClick={handleRejectGroupInvitation}
+                      disabled={groupInvitationActionId !== null}
+                      className="flex-1 rounded-lg border-2 border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50 transition"
+                      style={{ fontFamily: 'Arial, sans-serif' }}
+                    >
+                      {groupInvitationActionId === groupInvitation.id ? "…" : "Afvis"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleAcceptGroupInvitation}
+                      disabled={groupInvitationActionId !== null}
+                      className="flex-1 rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-50 transition shadow-md"
+                      style={{ fontFamily: 'Arial, sans-serif' }}
+                    >
+                      {groupInvitationActionId === groupInvitation.id ? "…" : "Accepter"}
+                    </button>
+                  </div>
+                )}
               </div>
             );
           })}
@@ -1461,8 +1612,16 @@ export default function ChatDetailPage() {
 
           <form
             onSubmit={handleSend}
-            className="flex-shrink-0 flex gap-2 p-3 sm:p-4 pt-3 pb-6 border-t border-gray-200 bg-[#E2F5E6] safe-area-inset-bottom"
+            className="fixed bg-[#E2F5E6] px-4 py-2"
+            style={{ 
+              bottom: isChild ? 'calc(90px + env(safe-area-inset-bottom))' : 'calc(64px + env(safe-area-inset-bottom))',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              width: 'min(calc(100% - 2rem), calc(42rem - 2rem))',
+              zIndex: 45
+            }}
           >
+            <div className="flex gap-2 w-full">
           {/* Hidden file inputs */}
           <input
             ref={fileInputRef}
@@ -1489,7 +1648,7 @@ export default function ChatDetailPage() {
             aria-label="Attach image"
             title="Attach image"
           >
-            {uploading ? "…" : <Image src="/camera.svg" alt="Camera" width={24} height={24} />}
+            {uploading ? "…" : <Image src="/camera.svg" alt="Camera" width={24} height={24} style={{width: "auto", height: "auto"}} />}
           </button>
           
           {/* Image picker popup */}
@@ -1587,10 +1746,10 @@ export default function ChatDetailPage() {
             className="flex-shrink-0 px-3 py-2.5 hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-[#E0785B] disabled:opacity-50 disabled:pointer-events-none min-h-[44px] min-w-[44px] flex items-center justify-center bg-transparent border-none"
             aria-label="Send besked"
           >
-            <Image src="/send.svg" alt="Send" width={24} height={24} />
+            <Image src="/send.svg" alt="Send" width={24} height={24} style={{width: "auto", height: "auto"}} />
           </button>
+            </div>
           </form>
-          <div className="h-4 bg-[#E2F5E6]"></div>
           
           {/* Reaction picker popup */}
           {showReactionPicker && (
@@ -1624,22 +1783,23 @@ export default function ChatDetailPage() {
         </div>
       </div>
 
-      {/* Bottom Navigation Bar - Only for children */}
+      {/* Bottom Navigation Bar - For children */}
       {isChild && (
-        <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 safe-area-inset-bottom z-50">
-          <div className="max-w-2xl mx-auto flex items-center justify-around px-2 py-2">
+        <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 safe-area-inset-bottom" style={{ zIndex: 40 }}>
+          <div className="max-w-2xl mx-auto flex items-center justify-around px-2 py-1">
             <Link
               href="/chats"
-              className={`flex flex-col items-center justify-center px-3 py-2 min-h-[60px] min-w-[60px] rounded-lg transition-colors ${
+              className={`relative flex flex-col items-center justify-center px-2 py-1 min-h-[48px] min-w-[48px] rounded-lg transition-colors ${
                 isActive("/chats") ? "text-[#E0785B]" : "text-gray-400"
               }`}
               aria-label="Chat"
             >
               <Image src="/chaticon.svg" alt="" width={48} height={48} className="w-12 h-12" />
+              <UnreadBadge userId={user?.id ?? null} />
             </Link>
             <Link
               href="/groups"
-              className={`flex flex-col items-center justify-center px-3 py-2 min-h-[60px] min-w-[60px] rounded-lg transition-colors ${
+              className={`flex flex-col items-center justify-center px-2 py-1 min-h-[48px] min-w-[48px] rounded-lg transition-colors ${
                 isActive("/groups") ? "text-[#E0785B]" : "text-gray-400"
               }`}
               aria-label="Grupper"
@@ -1648,7 +1808,7 @@ export default function ChatDetailPage() {
             </Link>
             <Link
               href="/chats/new"
-              className={`flex flex-col items-center justify-center px-3 py-2 min-h-[60px] min-w-[60px] rounded-lg transition-colors ${
+              className={`flex flex-col items-center justify-center px-2 py-1 min-h-[48px] min-w-[48px] rounded-lg transition-colors ${
                 isActive("/chats/new") ? "text-[#E0785B]" : "text-gray-400"
               }`}
               aria-label="Find venner"
@@ -1658,11 +1818,55 @@ export default function ChatDetailPage() {
             <button
               type="button"
               onClick={handleLogout}
-              className="flex flex-col items-center justify-center px-3 py-2 min-h-[60px] min-w-[60px] rounded-lg transition-colors text-gray-400 hover:text-[#E0785B] focus:outline-none focus:ring-2 focus:ring-[#E0785B]"
+              className="flex flex-col items-center justify-center px-2 py-1 min-h-[48px] min-w-[48px] rounded-lg transition-colors text-gray-400 hover:text-[#E0785B] focus:outline-none focus:ring-2 focus:ring-[#E0785B]"
               aria-label="Indstillinger"
             >
               <Image src="/logout.svg" alt="" width={48} height={48} className="w-12 h-12" />
             </button>
+          </div>
+        </nav>
+      )}
+
+      {/* Bottom Navigation Bar - For parents */}
+      {!isChild && (
+        <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 safe-area-inset-bottom" style={{ zIndex: 40 }}>
+          <div className="max-w-2xl mx-auto flex items-center justify-around px-2 py-1">
+            <Link
+              href="/parent"
+              className={`flex flex-col items-center justify-center px-2 py-1 min-h-[48px] min-w-[48px] rounded-lg transition-colors ${
+                isActive("/parent") ? "text-[#E0785B]" : "text-gray-400"
+              }`}
+              aria-label="Chat"
+            >
+              <Image src="/chaticon.svg" alt="" width={48} height={48} className="w-12 h-12" />
+            </Link>
+            <Link
+              href="/parent/create-child"
+              className={`flex flex-col items-center justify-center px-2 py-1 min-h-[48px] min-w-[48px] rounded-lg transition-colors ${
+                isActive("/parent/create-child") ? "text-[#E0785B]" : "text-gray-400"
+              }`}
+              aria-label="Opret barn"
+            >
+              <Image src="/parentcontrol.svg" alt="" width={48} height={48} className="w-12 h-12" />
+            </Link>
+            <Link
+              href="/parent/children"
+              className={`flex flex-col items-center justify-center px-2 py-1 min-h-[48px] min-w-[48px] rounded-lg transition-colors ${
+                isActive("/parent/children") ? "text-[#E0785B]" : "text-gray-400"
+              }`}
+              aria-label="Mine børn"
+            >
+              <Image src="/children.svg" alt="" width={48} height={48} className="w-12 h-12" />
+            </Link>
+            <Link
+              href="/parent/settings"
+              className={`flex flex-col items-center justify-center px-2 py-1 min-h-[48px] min-w-[48px] rounded-lg transition-colors ${
+                isActive("/parent/settings") ? "text-[#E0785B]" : "text-gray-400"
+              }`}
+              aria-label="Indstillinger"
+            >
+              <Image src="/Settings.svg" alt="" width={48} height={48} className="w-12 h-12" />
+            </Link>
           </div>
         </nav>
       )}

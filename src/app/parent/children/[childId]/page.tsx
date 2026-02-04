@@ -283,10 +283,10 @@ export default function ParentChildChatsPage() {
 
       {/* Bottom Navigation Bar for Parents */}
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 safe-area-inset-bottom z-50">
-        <div className="max-w-2xl mx-auto flex items-center justify-around px-2 py-2">
+        <div className="max-w-2xl mx-auto flex items-center justify-around px-2 py-1">
           <Link
             href="/parent"
-            className={`flex flex-col items-center justify-center px-3 py-2 min-h-[60px] min-w-[60px] rounded-lg transition-colors ${
+            className={`flex flex-col items-center justify-center px-2 py-1 min-h-[48px] min-w-[48px] rounded-lg transition-colors ${
               isActive("/parent") ? "text-[#E0785B]" : "text-gray-400"
             }`}
             aria-label="Chat"
@@ -295,7 +295,7 @@ export default function ParentChildChatsPage() {
           </Link>
           <Link
             href="/parent/create-child"
-            className={`flex flex-col items-center justify-center px-3 py-2 min-h-[60px] min-w-[60px] rounded-lg transition-colors ${
+            className={`flex flex-col items-center justify-center px-2 py-1 min-h-[48px] min-w-[48px] rounded-lg transition-colors ${
               isActive("/parent/create-child") ? "text-[#E0785B]" : "text-gray-400"
             }`}
             aria-label="Opret barn"
@@ -304,7 +304,7 @@ export default function ParentChildChatsPage() {
           </Link>
           <Link
             href="/parent/children"
-            className={`flex flex-col items-center justify-center px-3 py-2 min-h-[60px] min-w-[60px] rounded-lg transition-colors ${
+            className={`flex flex-col items-center justify-center px-2 py-1 min-h-[48px] min-w-[48px] rounded-lg transition-colors ${
               isActive("/parent/children") ? "text-[#E0785B]" : "text-gray-400"
             }`}
             aria-label="Mine børn"
@@ -313,7 +313,7 @@ export default function ParentChildChatsPage() {
           </Link>
           <Link
             href="/parent/settings"
-            className={`flex flex-col items-center justify-center px-3 py-2 min-h-[60px] min-w-[60px] rounded-lg transition-colors ${
+            className={`flex flex-col items-center justify-center px-2 py-1 min-h-[48px] min-w-[48px] rounded-lg transition-colors ${
               isActive("/parent/settings") ? "text-[#E0785B]" : "text-gray-400"
             }`}
             aria-label="Indstillinger"

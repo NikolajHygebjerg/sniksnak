@@ -6,6 +6,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { supabase } from "@/lib/supabase";
 import type { User } from "@supabase/supabase-js";
+import UnreadBadge from "@/components/UnreadBadge";
 
 type UserRow = {
   id: string;
@@ -670,19 +671,20 @@ export default function NewChatPage() {
       {/* Bottom Navigation Bar - Only for children */}
       {isChild && (
         <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 safe-area-inset-bottom z-50">
-          <div className="max-w-2xl mx-auto flex items-center justify-around px-2 py-2">
+          <div className="max-w-2xl mx-auto flex items-center justify-around px-2 py-1">
             <Link
               href="/chats"
-              className={`flex flex-col items-center justify-center px-3 py-2 min-h-[60px] min-w-[60px] rounded-lg transition-colors ${
+              className={`relative flex flex-col items-center justify-center px-2 py-1 min-h-[48px] min-w-[48px] rounded-lg transition-colors ${
                 isActive("/chats") ? "text-[#E0785B]" : "text-gray-400"
               }`}
               aria-label="Chat"
             >
               <Image src="/chaticon.svg" alt="" width={48} height={48} className="w-12 h-12" />
+              <UnreadBadge userId={user?.id ?? null} />
             </Link>
             <Link
               href="/groups"
-              className={`flex flex-col items-center justify-center px-3 py-2 min-h-[60px] min-w-[60px] rounded-lg transition-colors ${
+              className={`flex flex-col items-center justify-center px-2 py-1 min-h-[48px] min-w-[48px] rounded-lg transition-colors ${
                 isActive("/groups") ? "text-[#E0785B]" : "text-gray-400"
               }`}
               aria-label="Grupper"
@@ -691,7 +693,7 @@ export default function NewChatPage() {
             </Link>
             <Link
               href="/chats/new"
-              className={`flex flex-col items-center justify-center px-3 py-2 min-h-[60px] min-w-[60px] rounded-lg transition-colors ${
+              className={`flex flex-col items-center justify-center px-2 py-1 min-h-[48px] min-w-[48px] rounded-lg transition-colors ${
                 isActive("/chats/new") ? "text-[#E0785B]" : "text-gray-400"
               }`}
               aria-label="Find venner"
@@ -701,7 +703,7 @@ export default function NewChatPage() {
             <button
               type="button"
               onClick={handleLogout}
-              className="flex flex-col items-center justify-center px-3 py-2 min-h-[60px] min-w-[60px] rounded-lg transition-colors text-gray-400 hover:text-[#E0785B] focus:outline-none focus:ring-2 focus:ring-[#E0785B]"
+              className="flex flex-col items-center justify-center px-2 py-1 min-h-[48px] min-w-[48px] rounded-lg transition-colors text-gray-400 hover:text-[#E0785B] focus:outline-none focus:ring-2 focus:ring-[#E0785B]"
               aria-label="Indstillinger"
             >
               <Image src="/logout.svg" alt="" width={48} height={48} className="w-12 h-12" />

@@ -43,7 +43,13 @@ type GroupInvitation = {
   invited_by: string;
   invited_user_id: string;
   status: string;
-  inviter: {
+  inviter?: {
+    id: string;
+    first_name: string | null;
+    surname: string | null;
+    username: string | null;
+  };
+  invitee?: {
     id: string;
     first_name: string | null;
     surname: string | null;
@@ -62,6 +68,7 @@ export default function GroupDetailPage() {
   const [members, setMembers] = useState<GroupMember[]>([]);
   const [friends, setFriends] = useState<Friend[]>([]);
   const [pendingInvitations, setPendingInvitations] = useState<GroupInvitation[]>([]);
+  const [outgoingInvitations, setOutgoingInvitations] = useState<GroupInvitation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showInviteModal, setShowInviteModal] = useState(false);
@@ -161,8 +168,8 @@ export default function GroupDetailPage() {
           setMembers(processedMembers);
         }
 
-        // Load pending invitations for this user
-        const { data: invitationsData, error: invitationsErr } = await supabase
+        // Load pending invitations for this user (incoming)
+        const { data: incomingInvitationsData, error: incomingInvitationsErr } = await supabase
           .from("group_invitations")
           .select(`
             id,
@@ -183,15 +190,47 @@ export default function GroupDetailPage() {
 
         if (cancelled) return;
 
-        if (invitationsErr) {
-          console.error("Error loading invitations:", invitationsErr);
+        // Load outgoing invitations (invited by this user)
+        const { data: outgoingInvitationsData, error: outgoingInvitationsErr } = await supabase
+          .from("group_invitations")
+          .select(`
+            id,
+            group_id,
+            invited_by,
+            invited_user_id,
+            status,
+            invitee:users!group_invitations_invited_user_id_fkey (
+              id,
+              first_name,
+              surname,
+              username
+            )
+          `)
+          .eq("group_id", groupId)
+          .eq("invited_by", session.user.id)
+          .eq("status", "pending");
+
+        if (cancelled) return;
+
+        if (incomingInvitationsErr) {
+          console.error("Error loading incoming invitations:", incomingInvitationsErr);
         } else {
           // Supabase returns nested relations as arrays, convert to single object
-          const processedInvitations = (invitationsData || []).map((inv: any) => ({
+          const processedInvitations = (incomingInvitationsData || []).map((inv: any) => ({
             ...inv,
             inviter: Array.isArray(inv.inviter) ? inv.inviter[0] : inv.inviter,
           })) as GroupInvitation[];
           setPendingInvitations(processedInvitations);
+        }
+
+        if (outgoingInvitationsErr) {
+          console.error("Error loading outgoing invitations:", outgoingInvitationsErr);
+        } else {
+          const processedOutgoing = (outgoingInvitationsData || []).map((inv: any) => ({
+            ...inv,
+            invitee: Array.isArray(inv.invitee) ? inv.invitee[0] : inv.invitee,
+          })) as GroupInvitation[];
+          setOutgoingInvitations(processedOutgoing);
         }
 
         // Load friends (approved contacts) for inviting
@@ -389,7 +428,13 @@ export default function GroupDetailPage() {
           >
             {group.name[0]?.toUpperCase() || "G"}
           </span>
-          <h1 className="text-2xl font-semibold" style={{ fontFamily: 'Arial, sans-serif' }}>{group.name}</h1>
+          <Link
+            href={`/groups/${groupId}/chat`}
+            className="text-2xl font-semibold hover:text-[#E0785B] transition-colors cursor-pointer"
+            style={{ fontFamily: 'Arial, sans-serif' }}
+          >
+            {group.name}
+          </Link>
         </header>
 
         {error && (
@@ -398,10 +443,10 @@ export default function GroupDetailPage() {
           </div>
         )}
 
-        {/* Pending invitations section */}
+        {/* Pending invitations section (incoming) */}
         {pendingInvitations.length > 0 && (
           <section className="rounded-xl border border-gray-200 bg-[#E2F5E6] p-4 sm:p-6 mb-6">
-            <h2 className="text-sm font-semibold text-gray-700 mb-3">Invitationer</h2>
+            <h2 className="text-sm font-semibold text-gray-700 mb-3">Invitationer til dig</h2>
             <div className="space-y-2">
               {pendingInvitations.map((invitation) => (
                 <div
@@ -410,7 +455,7 @@ export default function GroupDetailPage() {
                 >
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-gray-900">
-                      {displayName(invitation.inviter)} har inviteret dig til {group.name}
+                      {invitation.inviter && displayName(invitation.inviter)} har inviteret dig til {group.name}
                     </p>
                   </div>
                   <button
@@ -420,6 +465,47 @@ export default function GroupDetailPage() {
                   >
                     {acceptingInvitationId === invitation.id ? "Accepterer…" : "Accepter"}
                   </button>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* Outgoing invitations section */}
+        {outgoingInvitations.length > 0 && (
+          <section className="rounded-xl border border-gray-200 bg-[#E2F5E6] p-4 sm:p-6 mb-6">
+            <h2 className="text-sm font-semibold text-gray-700 mb-3">Afventende invitationer ({outgoingInvitations.length})</h2>
+            <div className="space-y-2">
+              {outgoingInvitations.map((invitation) => (
+                <div
+                  key={invitation.id}
+                  className="flex items-center gap-3 p-3 bg-white rounded-lg"
+                >
+                  {invitation.invitee?.avatar_url ? (
+                    <img
+                      src={invitation.invitee.avatar_url}
+                      alt=""
+                      className="h-10 w-10 flex-shrink-0 rounded-full object-cover bg-gray-200"
+                      onError={(e) => {
+                        const target = e.target as HTMLImageElement;
+                        target.style.display = 'none';
+                        const fallback = target.nextElementSibling as HTMLElement;
+                        if (fallback) fallback.style.display = 'flex';
+                      }}
+                    />
+                  ) : null}
+                  <span
+                    className={`h-10 w-10 flex-shrink-0 rounded-full bg-gray-200 flex items-center justify-center text-gray-500 text-sm font-medium ${invitation.invitee?.avatar_url ? 'hidden' : ''}`}
+                    aria-hidden="true"
+                  >
+                    {invitation.invitee && displayName(invitation.invitee)[0]?.toUpperCase() || "?"}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-900 truncate">
+                      {invitation.invitee ? displayName(invitation.invitee) : "Ukendt"}
+                    </p>
+                    <p className="text-xs text-gray-500">Afventer svar</p>
+                  </div>
                 </div>
               ))}
             </div>
@@ -564,10 +650,10 @@ export default function GroupDetailPage() {
       {/* Bottom Navigation Bar - Only for children */}
       {isChild && (
         <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 safe-area-inset-bottom z-50">
-          <div className="max-w-2xl mx-auto flex items-center justify-around px-2 py-2">
+          <div className="max-w-2xl mx-auto flex items-center justify-around px-2 py-1">
             <Link
               href="/chats"
-              className={`flex flex-col items-center justify-center px-3 py-2 min-h-[60px] min-w-[60px] rounded-lg transition-colors ${
+              className={`flex flex-col items-center justify-center px-2 py-1 min-h-[48px] min-w-[48px] rounded-lg transition-colors ${
                 isActive("/chats") ? "text-[#E0785B]" : "text-gray-400"
               }`}
               aria-label="Chat"
@@ -576,7 +662,7 @@ export default function GroupDetailPage() {
             </Link>
             <Link
               href="/groups"
-              className={`flex flex-col items-center justify-center px-3 py-2 min-h-[60px] min-w-[60px] rounded-lg transition-colors ${
+              className={`flex flex-col items-center justify-center px-2 py-1 min-h-[48px] min-w-[48px] rounded-lg transition-colors ${
                 isActive("/groups") ? "text-[#E0785B]" : "text-gray-400"
               }`}
               aria-label="Grupper"
@@ -585,7 +671,7 @@ export default function GroupDetailPage() {
             </Link>
             <Link
               href="/chats/new"
-              className={`flex flex-col items-center justify-center px-3 py-2 min-h-[60px] min-w-[60px] rounded-lg transition-colors ${
+              className={`flex flex-col items-center justify-center px-2 py-1 min-h-[48px] min-w-[48px] rounded-lg transition-colors ${
                 isActive("/chats/new") ? "text-[#E0785B]" : "text-gray-400"
               }`}
               aria-label="Find venner"
@@ -595,7 +681,7 @@ export default function GroupDetailPage() {
             <button
               type="button"
               onClick={handleLogout}
-              className="flex flex-col items-center justify-center px-3 py-2 min-h-[60px] min-w-[60px] rounded-lg transition-colors text-gray-400 hover:text-[#E0785B] focus:outline-none focus:ring-2 focus:ring-[#E0785B]"
+              className="flex flex-col items-center justify-center px-2 py-1 min-h-[48px] min-w-[48px] rounded-lg transition-colors text-gray-400 hover:text-[#E0785B] focus:outline-none focus:ring-2 focus:ring-[#E0785B]"
               aria-label="Indstillinger"
             >
               <Image src="/logout.svg" alt="" width={48} height={48} className="w-12 h-12" />
