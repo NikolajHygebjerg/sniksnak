@@ -544,10 +544,10 @@ export default function GroupChatPage() {
             return (
               <div
                 key={msg.id}
-                className={`flex ${isMe ? "justify-end" : "justify-start"}`}
+                className={`flex ${isMe ? "justify-start" : "justify-end"}`}
               >
                 {!isMe && (
-                  <div className="flex-shrink-0 mr-2">
+                  <div className="flex-shrink-0 ml-2 order-2">
                     {msg.sender.avatar_url ? (
                       <img
                         src={msg.sender.avatar_url}
@@ -571,8 +571,8 @@ export default function GroupChatPage() {
                 )}
                 <div className={`max-w-[85%] sm:max-w-[75%] rounded-2xl px-3 py-2 ${
                   isMe
-                    ? "bg-gray-300 text-gray-900 rounded-br-md"
-                    : "bg-[#E0785B] text-white rounded-bl-md"
+                    ? "bg-gray-300 text-gray-900 rounded-bl-md"
+                    : "bg-[#E0785B] text-white rounded-br-md"
                 }`}>
                   {!isMe && (
                     <p className="text-xs font-medium text-gray-600 mb-1">
