@@ -501,7 +501,11 @@ export default function ParentChildrenPage() {
               const friendLabel = (f: UserRow) =>
                 f.first_name && f.surname ? `${f.first_name} ${f.surname}` : f.username ?? f.email ?? "Unknown";
               const rawLevel = link.surveillance_level as "strict" | "medium" | "mild" | null | undefined;
-              const surveillanceLevel: "strict" | "medium" | "mild" = (rawLevel === "strict" || rawLevel === "medium" || rawLevel === "mild") ? rawLevel : "medium";
+              const surveillanceLevel: "strict" | "medium" | "mild" = 
+                rawLevel === "strict" ? "strict" :
+                rawLevel === "medium" ? "medium" :
+                rawLevel === "mild" ? "mild" :
+                "medium";
               const canViewChats = surveillanceLevel === "strict";
 
               return (
