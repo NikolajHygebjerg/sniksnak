@@ -38,7 +38,6 @@ export default function ParentChildrenPage() {
   const [error, setError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [deletingChildId, setDeletingChildId] = useState<string | null>(null);
-  const [updatingSurveillanceLevel, setUpdatingSurveillanceLevel] = useState<string | null>(null);
   const [sendingLogin, setSendingLogin] = useState<string | null>(null);
   const [pendingRequests, setPendingRequests] = useState<Array<{
     id: number;
@@ -58,47 +57,6 @@ export default function ParentChildrenPage() {
     router.refresh();
   }
 
-  async function handleUpdateSurveillanceLevel(childId: string, newLevel: "strict" | "medium" | "mild") {
-    if (!user || updatingSurveillanceLevel) return;
-    
-    setUpdatingSurveillanceLevel(childId);
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.access_token) {
-      setUpdatingSurveillanceLevel(null);
-      return;
-    }
-    
-    try {
-      const res = await fetch("/api/parent/update-surveillance-level", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({ childId, surveillanceLevel: newLevel }),
-      });
-      
-      const data = await res.json();
-      if (!res.ok) {
-        console.error("Error updating surveillance level:", data.error, data.details);
-        setError(`Kunne ikke opdatere overvågningsniveau: ${data.error}${data.details ? ` (${data.details})` : ""}`);
-        setUpdatingSurveillanceLevel(null);
-        return;
-      }
-      
-      // Update local state
-      setLinks((prev) =>
-        prev.map((link) =>
-          link.child_id === childId ? { ...link, surveillance_level: newLevel } : link
-        )
-      );
-      setUpdatingSurveillanceLevel(null);
-    } catch (err) {
-      console.error("Exception updating surveillance level:", err);
-      setError(err instanceof Error ? err.message : "Der opstod en fejl");
-      setUpdatingSurveillanceLevel(null);
-    }
-  }
 
   async function handleSendLogin(childId: string, childName: string) {
     if (!user || sendingLogin) return;
@@ -267,7 +225,7 @@ export default function ParentChildrenPage() {
 
       const { data: linksData, error: linksErr } = await supabase
         .from("parent_child_links")
-        .select("id, parent_id, child_id, surveillance_level")
+        .select("id, parent_id, child_id")
         .eq("parent_id", uid);
 
       if (cancelled) return;
@@ -500,13 +458,8 @@ export default function ParentChildrenPage() {
               const friends = friendsByChildId[link.child_id] || [];
               const friendLabel = (f: UserRow) =>
                 f.first_name && f.surname ? `${f.first_name} ${f.surname}` : f.username ?? f.email ?? "Unknown";
-              const rawLevel = link.surveillance_level as "strict" | "medium" | "mild" | null | undefined;
-              const surveillanceLevel: "strict" | "medium" | "mild" = 
-                rawLevel === "strict" ? "strict" :
-                rawLevel === "medium" ? "medium" :
-                rawLevel === "mild" ? "mild" :
-                "medium";
-              const canViewChats = surveillanceLevel === "strict";
+              // All parents can view chats (surveillance level removed)
+              const canViewChats = true;
 
               return (
                 <li key={link.id} role="listitem" className="px-4 py-3">
@@ -531,16 +484,6 @@ export default function ParentChildrenPage() {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
                             <span className="font-medium text-gray-900 truncate">{label}</span>
-                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                              surveillanceLevel === "strict" ? "bg-red-100 text-red-700" :
-                              surveillanceLevel === "medium" ? "bg-yellow-100 text-yellow-700" :
-                              surveillanceLevel === "mild" ? "bg-green-100 text-green-700" :
-                              "bg-gray-100 text-gray-700"
-                            }`}>
-                              {surveillanceLevel === "strict" ? "Streng" :
-                               surveillanceLevel === "medium" ? "Medium" :
-                               surveillanceLevel === "mild" ? "Mild" : "Ukendt"}
-                            </span>
                           </div>
                         </div>
                         <span className="text-sm text-gray-500 flex-shrink-0 ml-auto">Se chats →</span>
@@ -561,44 +504,11 @@ export default function ParentChildrenPage() {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
                             <span className="font-medium text-gray-900 truncate">{label}</span>
-                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                              surveillanceLevel === "strict" ? "bg-red-100 text-red-700" :
-                              surveillanceLevel === "medium" ? "bg-yellow-100 text-yellow-700" :
-                              surveillanceLevel === "mild" ? "bg-green-100 text-green-700" :
-                              "bg-gray-100 text-gray-700"
-                            }`}>
-                              {surveillanceLevel === "strict" ? "Streng" :
-                               surveillanceLevel === "medium" ? "Medium" :
-                               surveillanceLevel === "mild" ? "Mild" : "Ukendt"}
-                            </span>
                           </div>
-                          <p className="text-xs text-gray-500 mt-0.5">
-                            {surveillanceLevel === "strict"
-                              ? "Fuld adgang til chats og billeder"
-                              : surveillanceLevel === "medium"
-                              ? "Adgang kun efter nøgleordsnotifikation"
-                              : surveillanceLevel === "mild"
-                              ? "Adgang kun når barnet flagger en besked"
-                              : "Ukendt overvågningsniveau"}
-                          </p>
                         </div>
                       </div>
                     )}
                     <div className="flex items-center gap-2 flex-shrink-0">
-                      <select
-                        value={surveillanceLevel}
-                        onChange={(e) => {
-                          const newLevel = e.target.value as "strict" | "medium" | "mild";
-                          handleUpdateSurveillanceLevel(link.child_id, newLevel);
-                        }}
-                        disabled={updatingSurveillanceLevel === link.child_id}
-                        className="text-xs rounded-lg border border-gray-300 bg-white px-2 py-1 text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#E0785B] disabled:opacity-50"
-                        aria-label={`Skift overvågningsniveau for ${label}`}
-                      >
-                        <option value="strict">Streng</option>
-                        <option value="medium">Medium</option>
-                        <option value="mild">Mild</option>
-                      </select>
                       <button
                         type="button"
                         onClick={(e) => {

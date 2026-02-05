@@ -130,7 +130,7 @@ export default function ChatDetailPage() {
   const [groupInvitation, setGroupInvitation] = useState<{ id: string; groupId: string; groupName: string; inviterName: string } | null>(null);
   const [groupInvitationActionId, setGroupInvitationActionId] = useState<string | null>(null);
   const [showImagePicker, setShowImagePicker] = useState(false);
-  const [parentLinks, setParentLinks] = useState<{ child_id: string; surveillance_level: string } | null>(null);
+  const [parentLinks, setParentLinks] = useState<{ child_id: string; surveillance_level?: string } | null>(null);
   const [selectedReaction, setSelectedReaction] = useState<string>("👍");
   const [showReactionPicker, setShowReactionPicker] = useState(false);
   const [longPressTimer, setLongPressTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
@@ -252,11 +252,10 @@ export default function ChatDetailPage() {
       // Check if user is a direct participant
       const isDirectParticipant = c.user1_id === uid || c.user2_id === uid;
       
-      // Check if user is a parent of either participant (for surveillance level check)
-      let parentSurveillanceLevel: "strict" | "medium" | "mild" | null = null;
+      // Check if user is a parent of either participant (surveillance level check removed - all parents can access)
+      let linksData: { child_id: string; surveillance_level: string } | null = null;
       let shouldAllowAccess = false;
       
-      let linksData: { child_id: string; surveillance_level: string } | null = null;
       try {
         if (!cancelled) {
           const { data } = await supabase
@@ -288,88 +287,8 @@ export default function ChatDetailPage() {
       if (isDirectParticipant) {
         shouldAllowAccess = true;
       } else if (linksData) {
-        // Not a direct participant, but is a parent of one of the children
-        parentSurveillanceLevel = linksData.surveillance_level as "strict" | "medium" | "mild" | null;
-        
-        if (linksData.surveillance_level === "strict") {
-          shouldAllowAccess = true;
-        } else if (linksData.surveillance_level === "medium") {
-            // Must check for flagged messages - default deny
-            shouldAllowAccess = false;
-            
-            try {
-              // Use API route with service role to bypass RLS issues
-              const { data: { session } } = await supabase.auth.getSession();
-              if (cancelled) return;
-              
-              if (!session?.access_token) {
-                console.warn("Medium level parent: No session token - denying access");
-                shouldAllowAccess = false;
-              } else {
-                console.log("🔍 Medium level parent: Checking flagged messages via API", {
-                  chatId,
-                  parentId: uid,
-                  childId: linksData.child_id
-                });
-
-                const apiResponse = await fetch(
-                  `/api/parent/check-flagged-messages?chatId=${encodeURIComponent(chatId || "")}&parentId=${encodeURIComponent(uid)}`,
-                  {
-                    headers: {
-                      Authorization: `Bearer ${session.access_token}`,
-                    },
-                  }
-                );
-
-                if (cancelled) return;
-
-                if (apiResponse.ok) {
-                  const data = await apiResponse.json();
-                  const hasFlaggedMessages = data.hasFlaggedMessages === true;
-
-                  console.log("🔍 Medium level parent: API check result", {
-                    chatId,
-                    parentId: uid,
-                    hasFlaggedMessages,
-                    flaggedCount: data.flaggedCount || 0,
-                    messageCount: data.messageCount || 0
-                  });
-
-                  if (hasFlaggedMessages) {
-                    console.log("✅ Medium level parent: Allowing access - flagged messages found via API");
-                    shouldAllowAccess = true;
-                  } else {
-                    console.log("❌ Medium level parent: Denying access - no flagged messages found via API");
-                    shouldAllowAccess = false;
-                  }
-                } else {
-                  const errorText = await apiResponse.text().catch(() => apiResponse.statusText);
-                  console.error("❌ Medium level parent: API check failed", {
-                    status: apiResponse.status,
-                    error: errorText
-                  });
-                  // On API error, deny access for safety
-                  shouldAllowAccess = false;
-                }
-              }
-            } catch (err) {
-              // Safe error logging
-              try {
-                if (err && typeof err === "object" && Object.keys(err).length > 0) {
-                  console.error("Error checking flagged messages via API:", err);
-                } else {
-                  console.error("Unknown error occurred:", err);
-                }
-              } catch (logErr) {
-                console.error("Error occurred but could not be logged:", String(err || "Unknown"));
-              }
-              // On error, deny access for safety
-              shouldAllowAccess = false;
-            }
-        } else {
-          // Mild level - no access
-          shouldAllowAccess = false;
-        }
+        // Not a direct participant, but is a parent of one of the children - allow access (surveillance level removed)
+        shouldAllowAccess = true;
       } else {
         // Not a direct participant and not a parent - deny access
         shouldAllowAccess = false;
@@ -378,13 +297,7 @@ export default function ChatDetailPage() {
       if (cancelled) return;
       
       if (!shouldAllowAccess) {
-        if (parentSurveillanceLevel === "mild") {
-          setError("You have 'Mild' surveillance level. You can only see chats when your child flags a message.");
-        } else if (parentSurveillanceLevel === "medium") {
-          setError("You have 'Medium' surveillance level. You can only access chats after receiving a keyword notification. This chat has no flagged messages.");
-        } else {
-          setError("You don't have access to this chat");
-        }
+        setError("You don't have access to this chat");
         setLoading(false);
         return;
       }

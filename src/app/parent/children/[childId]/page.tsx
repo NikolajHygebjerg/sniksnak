@@ -68,7 +68,7 @@ export default function ParentChildChatsPage() {
       // Verify current user is a parent of this child with strict surveillance level
       const { data: linkData, error: linkErr } = await supabase
         .from("parent_child_links")
-        .select("id, surveillance_level")
+        .select("id")
         .eq("parent_id", uid)
         .eq("child_id", childId)
         .maybeSingle();
@@ -79,21 +79,7 @@ export default function ParentChildChatsPage() {
         return;
       }
 
-      // Check surveillance level - only strict level parents can access
-      const surveillanceLevel = linkData.surveillance_level as "strict" | "medium" | "mild" | null;
-      if (surveillanceLevel !== "strict") {
-        if (!cancelled) {
-          if (surveillanceLevel === "medium") {
-            setError("You have 'Medium' surveillance level. You can only access chats after receiving a keyword notification.");
-          } else if (surveillanceLevel === "mild") {
-            setError("You have 'Mild' surveillance level. You can only see chats when your child flags a message.");
-          } else {
-            setError("You don't have access to view this child's chats. Only 'Strict' surveillance level allows access.");
-          }
-        }
-        setLoading(false);
-        return;
-      }
+      // All parents can access (surveillance level check removed)
 
       let childRes = await supabase.from("users").select("id, email, username").eq("id", childId).single();
       if (childRes.error && /username|schema cache/i.test(childRes.error.message)) {

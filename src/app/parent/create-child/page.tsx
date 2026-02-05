@@ -17,7 +17,6 @@ export default function ParentCreateChildPage() {
   const [createFirstName, setCreateFirstName] = useState("");
   const [createSurname, setCreateSurname] = useState("");
   const [createPin, setCreatePin] = useState("");
-  const [createSurveillanceLevel, setCreateSurveillanceLevel] = useState<"strict" | "medium" | "mild">("medium");
   const [createPhotoFile, setCreatePhotoFile] = useState<File | null>(null);
   const [createPhotoPreview, setCreatePhotoPreview] = useState<string | null>(null);
   const [createSubmitting, setCreateSubmitting] = useState(false);
@@ -96,7 +95,7 @@ export default function ParentCreateChildPage() {
     formData.set("first_name", first_name);
     formData.set("surname", surname);
     formData.set("pin", pin);
-    formData.set("surveillance_level", createSurveillanceLevel);
+    formData.set("surveillance_level", "medium"); // Default, surveillance level UI removed
     formData.set("photo", createPhotoFile);
     const res = await fetch("/api/parent/create-child", {
       method: "POST",
@@ -347,58 +346,6 @@ export default function ParentCreateChildPage() {
                 </div>
               </div>
             )}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Overvågningsniveau
-              </label>
-              <div className="space-y-2">
-                <label className="flex items-start gap-3 p-3 rounded-lg border border-gray-200 hover:bg-white cursor-pointer">
-                  <input
-                    type="radio"
-                    name="surveillance_level"
-                    value="strict"
-                    checked={createSurveillanceLevel === "strict"}
-                    onChange={(e) => setCreateSurveillanceLevel(e.target.value as "strict")}
-                    disabled={createSubmitting}
-                    className="mt-0.5"
-                  />
-                  <div className="flex-1">
-                    <div className="font-medium text-sm text-gray-900">Streng</div>
-                    <div className="text-xs text-gray-600">Adgang til dit barns chats og billeder</div>
-                  </div>
-                </label>
-                <label className="flex items-start gap-3 p-3 rounded-lg border border-gray-200 hover:bg-white cursor-pointer">
-                  <input
-                    type="radio"
-                    name="surveillance_level"
-                    value="medium"
-                    checked={createSurveillanceLevel === "medium"}
-                    onChange={(e) => setCreateSurveillanceLevel(e.target.value as "medium")}
-                    disabled={createSubmitting}
-                    className="mt-0.5"
-                  />
-                  <div className="flex-1">
-                    <div className="font-medium text-sm text-gray-900">Medium</div>
-                    <div className="text-xs text-gray-600">Notifikationer når eksplicit sprog bruges (og derefter adgang til chatten)</div>
-                  </div>
-                </label>
-                <label className="flex items-start gap-3 p-3 rounded-lg border border-gray-200 hover:bg-white cursor-pointer">
-                  <input
-                    type="radio"
-                    name="surveillance_level"
-                    value="mild"
-                    checked={createSurveillanceLevel === "mild"}
-                    onChange={(e) => setCreateSurveillanceLevel(e.target.value as "mild")}
-                    disabled={createSubmitting}
-                    className="mt-0.5"
-                  />
-                  <div className="flex-1">
-                    <div className="font-medium text-sm text-gray-900">Mild</div>
-                    <div className="text-xs text-gray-600">Modtag kun beskeder når dit barn flagger en dårlig besked</div>
-                  </div>
-                </label>
-              </div>
-            </div>
             <button
               type="submit"
               disabled={createSubmitting || !createPhotoFile}
