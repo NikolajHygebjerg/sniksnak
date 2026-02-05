@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback, useMemo } from "react";
+import React, { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { useRouter, useParams, usePathname } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
@@ -64,7 +64,7 @@ function renderMessageWithLinks(content: string) {
   
   // Pattern to match URLs and paths like /chats/[uuid]
   const linkPattern = /(https?:\/\/[^\s]+|\/chats\/[a-f0-9-]+)/gi;
-  const parts: (string | JSX.Element)[] = [];
+  const parts: (string | React.ReactElement)[] = [];
   let lastIndex = 0;
   let match;
   
