@@ -175,7 +175,7 @@ export async function subscribeToPush(
     // If it fails, it's not critical - badge notifications still work
     subscription = await registration.pushManager.subscribe({
       userVisibleOnly: true,
-      applicationServerKey: applicationServerKey,
+      applicationServerKey: applicationServerKey as BufferSource,
     });
 
     console.log('Subscribed to push notifications:', subscription);
