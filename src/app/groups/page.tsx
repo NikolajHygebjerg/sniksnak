@@ -102,7 +102,7 @@ export default function GroupsPage() {
           return;
         }
 
-        const groupsList = data.groups || [];
+        const groupsList: Group[] = data.groups || [];
         console.log("Loaded groups:", groupsList.length, groupsList.map(g => ({ id: g.id, name: g.name, created_by: g.created_by })));
         setGroups(groupsList);
         setLoading(false);
