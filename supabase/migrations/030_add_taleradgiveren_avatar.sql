@@ -5,11 +5,10 @@
 -- This updates the Talerådgiveren user to include an avatar URL
 -- ============================================================
 
--- Update Talerådgiveren user with avatar URL
+-- Update Talerådgiveren user with avatar URL (always set, even if already set)
 UPDATE public.users
 SET avatar_url = '/taleradgiveren-avatar.png'
-WHERE id = '945d9864-7118-487b-addb-1dd1e821bc30'
-  AND (avatar_url IS NULL OR avatar_url = '');
+WHERE id = '945d9864-7118-487b-addb-1dd1e821bc30';
 
 -- Verify the avatar was set
 SELECT id, email, first_name, surname, username, avatar_url 
