@@ -54,6 +54,7 @@ type GroupInvitation = {
     first_name: string | null;
     surname: string | null;
     username: string | null;
+    avatar_url?: string | null;
   };
 };
 
@@ -203,7 +204,8 @@ export default function GroupDetailPage() {
               id,
               first_name,
               surname,
-              username
+              username,
+              avatar_url
             )
           `)
           .eq("group_id", groupId)
