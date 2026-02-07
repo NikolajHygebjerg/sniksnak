@@ -91,8 +91,6 @@ export default function ParentChatDetailPage() {
         return;
       }
 
-      // All parents can access (surveillance level check removed)
-
       const { data: chatData, error: chatErr } = await supabase
         .from("chats")
         .select("id, user1_id, user2_id")
@@ -109,6 +107,59 @@ export default function ParentChatDetailPage() {
       if (c.user1_id !== childId && c.user2_id !== childId) {
         if (!cancelled) setError("This chat does not belong to this child");
         setLoading(false);
+        return;
+      }
+
+      // Check if there are flagged messages - parents can only access if there are flagged messages
+      const { data: messagesCheck, error: messagesCheckErr } = await supabase
+        .from("messages")
+        .select("id")
+        .eq("chat_id", chatId)
+        .limit(100);
+
+      if (messagesCheckErr) {
+        console.error("Error checking messages for flagged content:", messagesCheckErr);
+        if (!cancelled) {
+          setError("Kunne ikke tjekke adgang til chat");
+          setLoading(false);
+        }
+        return;
+      }
+
+      if (messagesCheck && messagesCheck.length > 0) {
+        const messageIds = messagesCheck.map(m => m.id);
+        const otherChildId = c.user1_id === childId ? c.user2_id : c.user1_id;
+        
+        const { data: flaggedData, error: flaggedErr } = await supabase
+          .from("flagged_messages")
+          .select("id")
+          .in("message_id", messageIds)
+          .in("child_id", [childId, otherChildId])
+          .limit(1)
+          .maybeSingle();
+
+        if (flaggedErr) {
+          console.error("Error checking flagged messages:", flaggedErr);
+          if (!cancelled) {
+            setError("Kunne ikke tjekke adgang til chat");
+            setLoading(false);
+          }
+          return;
+        }
+
+        if (!flaggedData) {
+          if (!cancelled) {
+            setError("Du har ikke adgang til denne chat. Forældre kan kun se chats med flagged beskeder.");
+            setLoading(false);
+          }
+          return;
+        }
+      } else {
+        // No messages in chat - deny access
+        if (!cancelled) {
+          setError("Du har ikke adgang til denne chat. Forældre kan kun se chats med flagged beskeder.");
+          setLoading(false);
+        }
         return;
       }
 

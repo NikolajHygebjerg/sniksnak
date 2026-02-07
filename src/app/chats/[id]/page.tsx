@@ -252,7 +252,8 @@ export default function ChatDetailPage() {
       // Check if user is a direct participant
       const isDirectParticipant = c.user1_id === uid || c.user2_id === uid;
       
-      // Check if user is a parent of either participant (surveillance level check removed - all parents can access)
+      // Check if user is a parent of either participant
+      // Parents can only access if there are flagged messages in the chat
       let linksData: { child_id: string; surveillance_level: string } | null = null;
       let shouldAllowAccess = false;
       
@@ -287,8 +288,55 @@ export default function ChatDetailPage() {
       if (isDirectParticipant) {
         shouldAllowAccess = true;
       } else if (linksData) {
-        // Not a direct participant, but is a parent of one of the children - allow access (surveillance level removed)
-        shouldAllowAccess = true;
+        // Not a direct participant, but is a parent of one of the children
+        // Check if there are flagged messages in this chat - parents can only access if there are flagged messages
+        try {
+          // First, get all messages in this chat
+          const { data: messagesData, error: messagesErr } = await supabase
+            .from("messages")
+            .select("id")
+            .eq("chat_id", c.id)
+            .limit(100);
+          
+          if (cancelled) return;
+          
+          if (messagesErr) {
+            console.error("Error checking messages for flagged content:", messagesErr);
+            // If we can't check, deny access for safety
+            shouldAllowAccess = false;
+          } else if (messagesData && messagesData.length > 0) {
+            const messageIds = messagesData.map(m => m.id);
+            const childId = linksData.child_id;
+            const otherChildId = childId === c.user1_id ? c.user2_id : c.user1_id;
+            
+            // Check if there are any flagged messages in this chat
+            const { data: flaggedData, error: flaggedErr } = await supabase
+              .from("flagged_messages")
+              .select("id")
+              .in("message_id", messageIds)
+              .in("child_id", [childId, otherChildId])
+              .limit(1)
+              .maybeSingle();
+            
+            if (cancelled) return;
+            
+            if (flaggedErr) {
+              console.error("Error checking flagged messages:", flaggedErr);
+              // If we can't check, deny access for safety
+              shouldAllowAccess = false;
+            } else {
+              // Only allow access if there are flagged messages
+              shouldAllowAccess = !!flaggedData;
+            }
+          } else {
+            // No messages in chat - deny access
+            shouldAllowAccess = false;
+          }
+        } catch (err) {
+          console.error("Error checking flagged messages:", err);
+          // If we can't check, deny access for safety
+          shouldAllowAccess = false;
+        }
       } else {
         // Not a direct participant and not a parent - deny access
         shouldAllowAccess = false;
@@ -297,7 +345,7 @@ export default function ChatDetailPage() {
       if (cancelled) return;
       
       if (!shouldAllowAccess) {
-        setError("You don't have access to this chat");
+        setError("Du har ikke adgang til denne chat. Forældre kan kun se chats med flagged beskeder.");
         setLoading(false);
         return;
       }
@@ -1229,6 +1277,10 @@ export default function ChatDetailPage() {
   return (
     <main className="min-h-screen flex flex-col bg-[#E0785B] safe-area-inset" style={{ fontFamily: 'Arial, sans-serif' }}>
       <div className="max-w-2xl mx-auto w-full flex flex-col flex-1 min-h-0 p-4" style={{ paddingBottom: isChild ? '65px' : '56px' }}>
+        {/* Logo */}
+        <div className="flex-shrink-0 flex justify-center mb-4">
+          <Image src="/logo.svg" alt="Sniksnak Chat" width={156} height={156} className="w-[156px] h-[156px]" loading="eager" />
+        </div>
         {/* Chat boks med runde hjørner og lysgrøn baggrund */}
         <div className="flex-1 min-h-0 bg-[#E2F5E6] rounded-3xl mb-4 pt-6" style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', position: 'relative' }}>
           <header className="flex-shrink-0 flex items-center gap-3 sm:gap-4 px-4 pt-2 pb-3 sm:py-4 border-b border-gray-200 bg-[#E2F5E6] safe-area-inset-top">
