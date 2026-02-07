@@ -102,7 +102,59 @@ export default function ParentChildChatsPage() {
         return;
       }
 
-      const list = (chatsData ?? []) as Chat[];
+      let list = (chatsData ?? []) as Chat[];
+      
+      // Filter: only show chats with flagged messages
+      if (list.length > 0) {
+        const chatIds = list.map((c) => c.id);
+        
+        // Get all messages in these chats
+        const { data: messagesCheck, error: messagesCheckErr } = await supabase
+          .from("messages")
+          .select("id, chat_id")
+          .in("chat_id", chatIds)
+          .limit(500);
+        
+        if (messagesCheckErr) {
+          console.error("Error checking messages for flagged content:", messagesCheckErr);
+        } else if (messagesCheck && messagesCheck.length > 0) {
+          const messageIds = messagesCheck.map(m => m.id);
+          const otherChildIds = list.map((c) =>
+            c.user1_id === childId ? c.user2_id : c.user1_id
+          );
+          const allChildIds = [childId, ...otherChildIds];
+          const uniqueChildIds = [...new Set(allChildIds)];
+          
+          // Check which chats have flagged messages
+          const { data: flaggedData, error: flaggedErr } = await supabase
+            .from("flagged_messages")
+            .select("message_id, child_id")
+            .in("message_id", messageIds)
+            .in("child_id", uniqueChildIds);
+          
+          if (flaggedErr) {
+            console.error("Error checking flagged messages:", flaggedErr);
+          } else if (flaggedData && flaggedData.length > 0) {
+            // Get unique chat IDs that have flagged messages
+            const flaggedMessageIds = new Set(flaggedData.map(f => f.message_id));
+            const chatsWithFlaggedMessages = new Set(
+              messagesCheck
+                .filter(m => flaggedMessageIds.has(m.id))
+                .map(m => m.chat_id)
+            );
+            
+            // Filter list to only include chats with flagged messages
+            list = list.filter(c => chatsWithFlaggedMessages.has(c.id));
+          } else {
+            // No flagged messages - hide all chats
+            list = [];
+          }
+        } else {
+          // No messages in any chat - hide all chats
+          list = [];
+        }
+      }
+      
       if (!cancelled) setChats(list);
       chatIdsRef.current = new Set(list.map((c) => c.id));
 

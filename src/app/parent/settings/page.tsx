@@ -297,7 +297,7 @@ export default function ParentSettingsPage() {
             <Image src="/parentcontrol.svg" alt="" width={48} height={48} className="w-12 h-12" />
           </Link>
           <Link
-            href="/parent/children"
+            href="/parent"
             className={`flex flex-col items-center justify-center px-2 py-1 min-h-[48px] min-w-[48px] rounded-lg transition-colors ${
               isActive("/parent/children") ? "text-[#E0785B]" : "text-gray-400"
             }`}
