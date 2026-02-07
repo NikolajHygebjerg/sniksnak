@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback, useMemo } from "react";
-import { useRouter, useParams } from "next/navigation";
+import React, { useEffect, useState, useRef, useCallback, useMemo } from "react";
+import { useRouter, useParams, usePathname } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { supabase } from "@/lib/supabase";
 import type { User } from "@supabase/supabase-js";
+import UnreadBadge from "@/components/UnreadBadge";
 
 type Chat = {
   id: string;
@@ -62,7 +64,7 @@ function renderMessageWithLinks(content: string) {
   
   // Pattern to match URLs and paths like /chats/[uuid]
   const linkPattern = /(https?:\/\/[^\s]+|\/chats\/[a-f0-9-]+)/gi;
-  const parts: (string | JSX.Element)[] = [];
+  const parts: (string | React.ReactElement)[] = [];
   let lastIndex = 0;
   let match;
   
@@ -80,7 +82,7 @@ function renderMessageWithLinks(content: string) {
       <Link
         key={match.index}
         href={url}
-        className="underline text-blue-600 hover:text-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded"
+        className="underline text-[#E0785B] hover:text-[#D06A4F] focus:outline-none focus:ring-2 focus:ring-[#E0785B] rounded"
         target={isExternal ? "_blank" : undefined}
         rel={isExternal ? "noopener noreferrer" : undefined}
       >
@@ -106,9 +108,11 @@ function renderMessageWithLinks(content: string) {
 
 export default function ChatDetailPage() {
   const router = useRouter();
+  const pathname = usePathname();
   const params = useParams();
   const chatId = params?.id as string | undefined;
   const [user, setUser] = useState<User | null>(null);
+  const [isChild, setIsChild] = useState(false);
   const [chat, setChat] = useState<Chat | null>(null);
   const [otherUser, setOtherUser] = useState<UserRow | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -123,13 +127,33 @@ export default function ChatDetailPage() {
   const [parentInvitation, setParentInvitation] = useState<ParentInvitationRow | null>(null);
   const [isInvitedParent, setIsInvitedParent] = useState(false);
   const [invitationActionId, setInvitationActionId] = useState<number | null>(null);
+  const [groupInvitation, setGroupInvitation] = useState<{ id: string; groupId: string; groupName: string; inviterName: string } | null>(null);
+  const [groupInvitationActionId, setGroupInvitationActionId] = useState<string | null>(null);
   const [showImagePicker, setShowImagePicker] = useState(false);
-  const [parentLinks, setParentLinks] = useState<{ child_id: string; surveillance_level: string } | null>(null);
+  const [parentLinks, setParentLinks] = useState<{ child_id: string; surveillance_level?: string } | null>(null);
+  const [selectedReaction, setSelectedReaction] = useState<string>("👍");
+  const [showReactionPicker, setShowReactionPicker] = useState(false);
+  const [longPressTimer, setLongPressTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
+  const reactionButtonRef = useRef<HTMLButtonElement>(null);
+
+  // 20 forskellige sjove ikoner (positive)
+  const reactionIcons = [
+    "👍", "❤️", "😊", "😂", "😍", "🤗", "🎉", "🔥", "⭐", "💯",
+    "😎", "🤩", "🥳", "😋", "🤔", "👏", "💪", "🌈", "✨", "🎈"
+  ];
+
+  const isActive = (path: string) => pathname === path;
+
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    router.replace("/login");
+    router.refresh();
+  }
 
   /** Reload flags for the current chat */
   const loadFlags = useCallback(async () => {
@@ -218,7 +242,7 @@ export default function ChatDetailPage() {
         .maybeSingle();
 
       if (chatErr || !chatData) {
-        if (!cancelled) setError(chatErr?.message ?? "Chat not found");
+        if (!cancelled) setError(chatErr?.message ?? "Chat ikke fundet");
         setLoading(false);
         return;
       }
@@ -228,11 +252,11 @@ export default function ChatDetailPage() {
       // Check if user is a direct participant
       const isDirectParticipant = c.user1_id === uid || c.user2_id === uid;
       
-      // Check if user is a parent of either participant (for surveillance level check)
-      let parentSurveillanceLevel: "strict" | "medium" | "mild" | null = null;
+      // Check if user is a parent of either participant
+      // Parents can only access if there are flagged messages in the chat
+      let linksData: { child_id: string; surveillance_level: string } | null = null;
       let shouldAllowAccess = false;
       
-      let linksData: { child_id: string; surveillance_level: string } | null = null;
       try {
         if (!cancelled) {
           const { data } = await supabase
@@ -265,85 +289,52 @@ export default function ChatDetailPage() {
         shouldAllowAccess = true;
       } else if (linksData) {
         // Not a direct participant, but is a parent of one of the children
-        parentSurveillanceLevel = linksData.surveillance_level as "strict" | "medium" | "mild" | null;
-        
-        if (linksData.surveillance_level === "strict") {
-          shouldAllowAccess = true;
-        } else if (linksData.surveillance_level === "medium") {
-            // Must check for flagged messages - default deny
+        // Check if there are flagged messages in this chat - parents can only access if there are flagged messages
+        try {
+          // First, get all messages in this chat
+          const { data: messagesData, error: messagesErr } = await supabase
+            .from("messages")
+            .select("id")
+            .eq("chat_id", c.id)
+            .limit(100);
+          
+          if (cancelled) return;
+          
+          if (messagesErr) {
+            console.error("Error checking messages for flagged content:", messagesErr);
+            // If we can't check, deny access for safety
             shouldAllowAccess = false;
+          } else if (messagesData && messagesData.length > 0) {
+            const messageIds = messagesData.map(m => m.id);
+            const childId = linksData.child_id;
+            const otherChildId = childId === c.user1_id ? c.user2_id : c.user1_id;
             
-            try {
-              // Use API route with service role to bypass RLS issues
-              const { data: { session } } = await supabase.auth.getSession();
-              if (cancelled) return;
-              
-              if (!session?.access_token) {
-                console.warn("Medium level parent: No session token - denying access");
-                shouldAllowAccess = false;
-              } else {
-                console.log("🔍 Medium level parent: Checking flagged messages via API", {
-                  chatId,
-                  parentId: uid,
-                  childId: linksData.child_id
-                });
-
-                const apiResponse = await fetch(
-                  `/api/parent/check-flagged-messages?chatId=${encodeURIComponent(chatId || "")}&parentId=${encodeURIComponent(uid)}`,
-                  {
-                    headers: {
-                      Authorization: `Bearer ${session.access_token}`,
-                    },
-                  }
-                );
-
-                if (cancelled) return;
-
-                if (apiResponse.ok) {
-                  const data = await apiResponse.json();
-                  const hasFlaggedMessages = data.hasFlaggedMessages === true;
-
-                  console.log("🔍 Medium level parent: API check result", {
-                    chatId,
-                    parentId: uid,
-                    hasFlaggedMessages,
-                    flaggedCount: data.flaggedCount || 0,
-                    messageCount: data.messageCount || 0
-                  });
-
-                  if (hasFlaggedMessages) {
-                    console.log("✅ Medium level parent: Allowing access - flagged messages found via API");
-                    shouldAllowAccess = true;
-                  } else {
-                    console.log("❌ Medium level parent: Denying access - no flagged messages found via API");
-                    shouldAllowAccess = false;
-                  }
-                } else {
-                  const errorText = await apiResponse.text().catch(() => apiResponse.statusText);
-                  console.error("❌ Medium level parent: API check failed", {
-                    status: apiResponse.status,
-                    error: errorText
-                  });
-                  // On API error, deny access for safety
-                  shouldAllowAccess = false;
-                }
-              }
-            } catch (err) {
-              // Safe error logging
-              try {
-                if (err && typeof err === "object" && Object.keys(err).length > 0) {
-                  console.error("Error checking flagged messages via API:", err);
-                } else {
-                  console.error("Unknown error occurred:", err);
-                }
-              } catch (logErr) {
-                console.error("Error occurred but could not be logged:", String(err || "Unknown"));
-              }
-              // On error, deny access for safety
+            // Check if there are any flagged messages in this chat
+            const { data: flaggedData, error: flaggedErr } = await supabase
+              .from("flagged_messages")
+              .select("id")
+              .in("message_id", messageIds)
+              .in("child_id", [childId, otherChildId])
+              .limit(1)
+              .maybeSingle();
+            
+            if (cancelled) return;
+            
+            if (flaggedErr) {
+              console.error("Error checking flagged messages:", flaggedErr);
+              // If we can't check, deny access for safety
               shouldAllowAccess = false;
+            } else {
+              // Only allow access if there are flagged messages
+              shouldAllowAccess = !!flaggedData;
             }
-        } else {
-          // Mild level - no access
+          } else {
+            // No messages in chat - deny access
+            shouldAllowAccess = false;
+          }
+        } catch (err) {
+          console.error("Error checking flagged messages:", err);
+          // If we can't check, deny access for safety
           shouldAllowAccess = false;
         }
       } else {
@@ -354,13 +345,7 @@ export default function ChatDetailPage() {
       if (cancelled) return;
       
       if (!shouldAllowAccess) {
-        if (parentSurveillanceLevel === "mild") {
-          setError("You have 'Mild' surveillance level. You can only see chats when your child flags a message.");
-        } else if (parentSurveillanceLevel === "medium") {
-          setError("You have 'Medium' surveillance level. You can only access chats after receiving a keyword notification. This chat has no flagged messages.");
-        } else {
-          setError("You don't have access to this chat");
-        }
+        setError("Du har ikke adgang til denne chat. Forældre kan kun se chats med flagged beskeder.");
         setLoading(false);
         return;
       }
@@ -390,33 +375,41 @@ export default function ChatDetailPage() {
         console.error("Error loading own user:", ownUserError);
       }
       
-      const isChild = !!(ownUser?.username != null && String(ownUser.username).trim() !== "");
-      if (isChild) {
-        const { data: approved, error: approvedError } = await supabase
-          .from("parent_approved_contacts")
-          .select("contact_user_id")
-          .eq("child_id", uid)
-          .eq("contact_user_id", otherId)
-          .maybeSingle();
+      const isChildUser = !!(ownUser?.username != null && String(ownUser.username).trim() !== "");
+      if (!cancelled) {
+        setIsChild(isChildUser);
+      }
+      if (isChildUser) {
+        const TALERADGIVEREN_USER_ID = process.env.NEXT_PUBLIC_TALERADGIVEREN_USER_ID || "945d9864-7118-487b-addb-1dd1e821bc30";
         
-        if (cancelled) return;
-        
-        if (approvedError) {
-          // Safe error logging
-          try {
-            if (approvedError && typeof approvedError === "object" && Object.keys(approvedError).length > 0) {
-              console.error("Error checking approved contacts:", approvedError);
-            } else {
-              console.error("Unknown error occurred:", approvedError);
+        // Always allow access to Talerådgiveren chat
+        if (otherId !== TALERADGIVEREN_USER_ID) {
+          const { data: approved, error: approvedError } = await supabase
+            .from("parent_approved_contacts")
+            .select("contact_user_id")
+            .eq("child_id", uid)
+            .eq("contact_user_id", otherId)
+            .maybeSingle();
+          
+          if (cancelled) return;
+          
+          if (approvedError) {
+            // Safe error logging
+            try {
+              if (approvedError && typeof approvedError === "object" && Object.keys(approvedError).length > 0) {
+                console.error("Error checking approved contacts:", approvedError);
+              } else {
+                console.error("Unknown error occurred:", approvedError);
+              }
+            } catch (logErr) {
+              console.error("Error occurred but could not be logged:", String(approvedError || "Unknown"));
             }
-          } catch (logErr) {
-            console.error("Error occurred but could not be logged:", String(approvedError || "Unknown"));
           }
-        }
-        if (!approved) {
-          setError("This chat is waiting for your parent to accept this contact. They have been notified.");
-          setLoading(false);
-          return;
+          if (!approved) {
+            setError("This chat is waiting for your parent to accept this contact. They have been notified.");
+            setLoading(false);
+            return;
+          }
         }
       }
       if (cancelled) return;
@@ -470,7 +463,39 @@ export default function ChatDetailPage() {
         setError(messagesErr?.message || "Failed to load messages");
       } else {
         // Safe fallback for data
-        setMessages((messagesData ?? []) as Message[]);
+        const msgs = (messagesData ?? []) as Message[];
+        setMessages(msgs);
+        
+        // Check for group invitation messages
+        for (const msg of msgs) {
+          if (msg.content && msg.content.startsWith("GROUP_INVITATION:")) {
+            const parts = msg.content.split(":");
+            if (parts.length >= 5) {
+              const [, invitationId, groupId, groupName, inviterName] = parts;
+              // Check if this invitation is for the current user and is still pending
+              const { data: { session } } = await supabase.auth.getSession();
+              if (session?.user) {
+                const { data: invitation } = await supabase
+                  .from("group_invitations")
+                  .select("id, status, invited_user_id")
+                  .eq("id", invitationId)
+                  .eq("invited_user_id", session.user.id)
+                  .eq("status", "pending")
+                  .maybeSingle();
+                
+                if (invitation) {
+                  setGroupInvitation({
+                    id: invitationId,
+                    groupId,
+                    groupName,
+                    inviterName,
+                  });
+                  break;
+                }
+              }
+            }
+          }
+        }
       }
 
       // Phase 6: fetch flags for messages in this chat (for Flag button + visual indicator)
@@ -658,6 +683,16 @@ export default function ChatDetailPage() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // Scroll to bottom when chat loads and messages are ready
+  useEffect(() => {
+    if (!loading && messages.length > 0) {
+      // Use setTimeout to ensure DOM is ready
+      setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
+      }, 100);
+    }
+  }, [loading, messages.length]);
 
   async function handleSend(e: React.FormEvent) {
     e.preventDefault();
@@ -913,6 +948,60 @@ export default function ChatDetailPage() {
     cameraInputRef.current?.click();
   };
 
+  async function handleSendReaction(reaction: string) {
+    if (!user || !chatId || sending) return;
+    setSending(true);
+    setError(null);
+    const optimistic: Message = {
+      id: crypto.randomUUID(),
+      chat_id: chatId,
+      sender_id: user.id,
+      content: reaction,
+      created_at: new Date().toISOString(),
+    };
+    setMessages((prev) => [...prev, optimistic]);
+    const { data: inserted, error: insertErr } = await supabase
+      .from("messages")
+      .insert({ chat_id: chatId, sender_id: user.id, content: reaction })
+      .select("id, chat_id, sender_id, content, created_at, attachment_url, attachment_type")
+      .maybeSingle();
+    setSending(false);
+    if (insertErr || !inserted) {
+      setMessages((prev) => prev.filter((m) => m.id !== optimistic.id));
+      setError(insertErr?.message ?? "Kunne ikke sende reaktion");
+      return;
+    }
+    setMessages((prev) => {
+      const hasRealMessage = prev.some((m) => m.id === inserted.id);
+      if (hasRealMessage) {
+        return prev.filter((m) => m.id !== optimistic.id);
+      } else {
+        return prev.map((m) => (m.id === optimistic.id ? (inserted as Message) : m));
+      }
+    });
+    setShowReactionPicker(false);
+  }
+
+  const handleReactionPressStart = () => {
+    const timer = setTimeout(() => {
+      setShowReactionPicker(true);
+    }, 500); // 500ms for langt tryk
+    setLongPressTimer(timer);
+  };
+
+  const handleReactionPressEnd = () => {
+    if (longPressTimer) {
+      clearTimeout(longPressTimer);
+      setLongPressTimer(null);
+    }
+  };
+
+  const handleReactionClick = () => {
+    if (!showReactionPicker) {
+      handleSendReaction(selectedReaction);
+    }
+  };
+
   /** Accept the connection request: approve contact and update invitation status */
   async function handleAcceptInvitation() {
     if (!user || !parentInvitation || invitationActionId !== null) return;
@@ -1041,6 +1130,75 @@ export default function ChatDetailPage() {
     else setParentInvitation((prev) => (prev ? { ...prev, status: "rejected" } : null));
   }
 
+  /** Accept group invitation */
+  async function handleAcceptGroupInvitation() {
+    if (!user || !groupInvitation || groupInvitationActionId !== null) return;
+    setGroupInvitationActionId(groupInvitation.id);
+    setError(null);
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        setError("No session token");
+        setGroupInvitationActionId(null);
+        return;
+      }
+
+      const res = await fetch("/api/groups/accept-invitation", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ invitationId: groupInvitation.id }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.error || "Failed to accept invitation");
+        setGroupInvitationActionId(null);
+        return;
+      }
+
+      // Update invitation status
+      setGroupInvitation(null);
+      setGroupInvitationActionId(null);
+      
+      // Redirect to group page
+      router.push(`/groups/${groupInvitation.groupId}`);
+    } catch (err) {
+      console.error("Error accepting group invitation:", err);
+      setError(err instanceof Error ? err.message : "An error occurred");
+      setGroupInvitationActionId(null);
+    }
+  }
+
+  /** Reject group invitation */
+  async function handleRejectGroupInvitation() {
+    if (!user || !groupInvitation || groupInvitationActionId !== null) return;
+    setGroupInvitationActionId(groupInvitation.id);
+    setError(null);
+
+    try {
+      const { error: updateErr } = await supabase
+        .from("group_invitations")
+        .update({ status: "rejected" })
+        .eq("id", groupInvitation.id);
+
+      if (updateErr) {
+        setError(updateErr.message);
+      } else {
+        setGroupInvitation(null);
+      }
+      setGroupInvitationActionId(null);
+    } catch (err) {
+      console.error("Error rejecting group invitation:", err);
+      setError(err instanceof Error ? err.message : "An error occurred");
+      setGroupInvitationActionId(null);
+    }
+  }
+
   /** Phase 6: insert flag and call moderation API placeholder */
   async function handleFlag(messageId: string) {
     if (!user) return;
@@ -1107,7 +1265,7 @@ export default function ChatDetailPage() {
           </p>
             <Link
               href="/chats"
-              className="mt-4 inline-block text-sm text-blue-600 hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500 rounded"
+              className="mt-4 inline-block text-sm text-[#E0785B] hover:underline focus:outline-none focus:ring-2 focus:ring-[#E0785B] rounded"
             >
               ← Tilbage til chats
             </Link>
@@ -1117,15 +1275,23 @@ export default function ChatDetailPage() {
   }
 
   return (
-    <main className="min-h-screen flex flex-col bg-white safe-area-inset">
-      <div className="max-w-2xl mx-auto w-full flex flex-col flex-1 min-h-0">
-        <header className="flex-shrink-0 flex items-center gap-3 sm:gap-4 px-4 py-3 sm:py-4 border-b border-gray-200 bg-white safe-area-inset-top">
+    <main className="min-h-screen flex flex-col bg-[#E0785B] safe-area-inset" style={{ fontFamily: 'Arial, sans-serif' }}>
+      <div className="max-w-2xl mx-auto w-full flex flex-col flex-1 min-h-0 p-4" style={{ paddingBottom: isChild ? '65px' : '56px' }}>
+        {/* Logo */}
+        <div className="flex-shrink-0 flex justify-center mb-4">
+          <Image src="/logo.svg" alt="Sniksnak Chat" width={156} height={156} className="w-[156px] h-[156px]" loading="eager" />
+        </div>
+        {/* Chat boks med runde hjørner og lysgrøn baggrund */}
+        <div className="flex-1 min-h-0 bg-[#E2F5E6] rounded-3xl mb-4 pt-6" style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden', position: 'relative' }}>
+          <header className="flex-shrink-0 flex items-center gap-3 sm:gap-4 px-4 pt-2 pb-3 sm:py-4 border-b border-gray-200 bg-[#E2F5E6] safe-area-inset-top">
             <Link
               href="/chats"
-              className="text-sm text-gray-500 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded min-w-[44px] min-h-[44px] inline-flex items-center justify-center touch-manipulation"
+              className="text-gray-500 hover:text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#E0785B] rounded min-w-[44px] min-h-[44px] inline-flex items-center justify-center touch-manipulation"
               aria-label="Tilbage til chats"
             >
-              ← Chats
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M15 18L9 12L15 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
             </Link>
           {/* AVATAR VISNING I CHAT HEADER */}
           {/* Hvis den anden bruger har uploadet et avatar-billede (avatar_url findes), vises det */}
@@ -1153,13 +1319,13 @@ export default function ChatDetailPage() {
             {(otherUser?.first_name?.trim()?.[0] ?? otherUser?.username?.trim()?.[0] ?? otherUser?.email?.[0] ?? "…").toUpperCase()}
           </span>
           <div className="flex-1 min-w-0">
-            <h1 className="text-lg font-semibold truncate">
+            <h1 className="text-lg font-semibold truncate" style={{ fontFamily: 'Arial, sans-serif' }}>
               {otherUser?.first_name != null && otherUser?.surname != null && (otherUser.first_name.trim() || otherUser.surname.trim())
                 ? `${otherUser.first_name.trim() || "?"} ${otherUser.surname.trim() || "?"}`
                 : otherUser?.username ?? otherUser?.email ?? "…"}
             </h1>
             {otherTyping && (
-              <p className="text-xs text-gray-500 mt-0.5" aria-live="polite">
+              <p className="text-xs text-gray-500 mt-0.5" aria-live="polite" style={{ fontFamily: 'Arial, sans-serif' }}>
                 skriver…
               </p>
             )}
@@ -1167,13 +1333,14 @@ export default function ChatDetailPage() {
         </header>
 
 
-        <div
-          className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0"
-          role="log"
-          aria-label="Chat messages"
-        >
+          <div
+            className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0"
+            role="log"
+            aria-label="Chat messages"
+            style={{ paddingBottom: '80px' }}
+          >
           {messages.length === 0 && (
-            <p className="text-center text-gray-400 text-sm py-4">
+            <p className="text-center text-gray-400 text-sm py-4" style={{ fontFamily: 'Arial, sans-serif' }}>
               Ingen beskeder endnu. Sig hej!
             </p>
           )}
@@ -1194,23 +1361,28 @@ export default function ChatDetailPage() {
               msg.content.includes("wants to connect") || 
               msg.content.includes("Feel free to chat with me here")
             );
+            const isGroupInvitationMessage = msg.content && msg.content.startsWith("GROUP_INVITATION:");
             const showInvitationButtons = isIntroMessage && 
               parentInvitation && 
               parentInvitation.status === "pending" && 
               isInvitedParent;
+            const showGroupInvitationButtons = isGroupInvitationMessage && 
+              groupInvitation && 
+              groupInvitation.id && 
+              groupInvitationActionId === null;
             
             return (
               <div
                 key={msg.id}
-                className={`flex ${isMe ? "justify-end" : "justify-start"} ${showInvitationButtons ? "flex-col" : ""}`}
+                className={`flex ${isMe ? "justify-start" : "justify-end"} ${showInvitationButtons || showGroupInvitationButtons ? "flex-col" : ""}`}
               >
                 <div
                   className={`max-w-[85%] sm:max-w-[75%] rounded-2xl px-3 py-2 ${
                     isFlagged
-                      ? "ring-2 ring-amber-500 bg-amber-50 text-gray-900 rounded-br-md"
+                      ? "ring-2 ring-amber-500 bg-amber-50 text-gray-900 rounded-bl-md"
                       : isMe
-                        ? "bg-blue-600 text-white rounded-br-md"
-                        : "bg-gray-200 text-gray-900 rounded-bl-md"
+                        ? "bg-gray-300 text-gray-900 rounded-bl-md"
+                        : "bg-[#E0785B] text-white rounded-br-md"
                   } ${isFlagged && isMe ? "!bg-amber-100" : ""}`}
                 >
                   {isImage && msg.attachment_url ? (
@@ -1230,9 +1402,9 @@ export default function ChatDetailPage() {
                       </a>
                       {isFlagged && (
                         <div className="px-2 py-1 bg-amber-50 border-t border-amber-200">
-                          <p className="text-xs text-amber-800 font-medium">🚩 Flagget billede</p>
+                          <p className="text-xs text-amber-800 font-medium" style={{ fontFamily: 'Arial, sans-serif' }}>🚩 Flagget billede</p>
                           {flags.length > 0 && flags[0].reason && (
-                            <p className="text-xs text-amber-700 mt-0.5">{flags[0].reason}</p>
+                            <p className="text-xs text-amber-700 mt-0.5" style={{ fontFamily: 'Arial, sans-serif' }}>{flags[0].reason}</p>
                           )}
                         </div>
                       )}
@@ -1243,20 +1415,26 @@ export default function ChatDetailPage() {
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-sm underline break-all"
+                      style={{ fontFamily: 'Arial, sans-serif' }}
                     >
                       Vedhæftet fil
                     </a>
                   ) : null}
                   {(msg.content ?? "").trim() ? (
-                    <p className="text-sm whitespace-pre-wrap break-words mt-1">
-                      {renderMessageWithLinks(msg.content ?? "")}
+                    <p className="text-sm whitespace-pre-wrap break-words mt-1" style={{ fontFamily: 'Arial, sans-serif' }}>
+                      {isGroupInvitationMessage && groupInvitation ? (
+                        <>Du er inviteret til gruppen "{groupInvitation.groupName}" af {groupInvitation.inviterName}.</>
+                      ) : (
+                        renderMessageWithLinks(msg.content ?? "")
+                      )}
                     </p>
                   ) : null}
                   <div className="flex items-center justify-between gap-2 mt-1">
                     <p
                       className={`text-xs ${
-                        isMe && !isFlagged ? "text-blue-200" : "text-gray-500"
+                        isMe && !isFlagged ? "text-gray-600" : "text-gray-500"
                       }`}
+                      style={{ fontFamily: 'Arial, sans-serif' }}
                     >
                       {new Date(msg.created_at).toLocaleTimeString([], {
                         hour: "2-digit",
@@ -1269,12 +1447,13 @@ export default function ChatDetailPage() {
                       disabled={flaggingMessageId === msg.id}
                       className="text-xs px-2 py-1 rounded border border-gray-300 bg-white/80 hover:bg-white disabled:opacity-50 text-gray-700"
                       aria-label={isFlagged ? "Message flagged" : "Flag message"}
+                      style={{ fontFamily: 'Arial, sans-serif' }}
                     >
                       {flaggingMessageId === msg.id ? "…" : isFlagged ? "🚩 Flagget" : "Flag"}
                     </button>
                   </div>
                   {isFlagged && (
-                    <div className="text-xs text-amber-700 mt-1" role="status">
+                    <div className="text-xs text-amber-700 mt-1" role="status" style={{ fontFamily: 'Arial, sans-serif' }}>
                       <p>Flagget: {flags.map((f) => f.reason || "Ingen grund").join("; ")}</p>
                       {/* Show reviewed/override button for parents - check if user has parent links */}
                       {user && parentLinks && (
@@ -1338,6 +1517,7 @@ export default function ChatDetailPage() {
                           }}
                           className="mt-1 text-xs px-2 py-1 rounded border border-amber-300 bg-white hover:bg-amber-50 text-amber-800"
                           aria-label="Clear flag (reviewed)"
+                          style={{ fontFamily: 'Arial, sans-serif' }}
                         >
                           ✓ Gennemgået - Fjern flag
                         </button>
@@ -1352,6 +1532,7 @@ export default function ChatDetailPage() {
                       onClick={handleRejectInvitation}
                       disabled={invitationActionId !== null}
                       className="flex-1 rounded-lg border-2 border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50 transition"
+                      style={{ fontFamily: 'Arial, sans-serif' }}
                     >
                       {invitationActionId === parentInvitation.id ? "…" : "Afvis"}
                     </button>
@@ -1360,21 +1541,52 @@ export default function ChatDetailPage() {
                       onClick={handleAcceptInvitation}
                       disabled={invitationActionId !== null}
                       className="flex-1 rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-50 transition shadow-md"
+                      style={{ fontFamily: 'Arial, sans-serif' }}
                     >
                       {invitationActionId === parentInvitation.id ? "…" : "Acceptér"}
+                    </button>
+                  </div>
+                )}
+                {showGroupInvitationButtons && (
+                  <div className="mt-2 ml-0 flex gap-2 max-w-[85%] sm:max-w-[75%]">
+                    <button
+                      type="button"
+                      onClick={handleRejectGroupInvitation}
+                      disabled={groupInvitationActionId !== null}
+                      className="flex-1 rounded-lg border-2 border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50 transition"
+                      style={{ fontFamily: 'Arial, sans-serif' }}
+                    >
+                      {groupInvitationActionId === groupInvitation.id ? "…" : "Afvis"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleAcceptGroupInvitation}
+                      disabled={groupInvitationActionId !== null}
+                      className="flex-1 rounded-lg bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700 disabled:opacity-50 transition shadow-md"
+                      style={{ fontFamily: 'Arial, sans-serif' }}
+                    >
+                      {groupInvitationActionId === groupInvitation.id ? "…" : "Accepter"}
                     </button>
                   </div>
                 )}
               </div>
             );
           })}
-          <div ref={messagesEndRef} />
-        </div>
+          <div ref={messagesEndRef} className="h-8" />
+          </div>
 
-        <form
-          onSubmit={handleSend}
-          className="flex-shrink-0 flex gap-2 p-3 sm:p-4 border-t border-gray-200 bg-gray-50 safe-area-inset-bottom"
-        >
+          <form
+            onSubmit={handleSend}
+            className="fixed bg-[#E2F5E6] px-4 py-2"
+            style={{ 
+              bottom: isChild ? 'calc(90px + env(safe-area-inset-bottom))' : 'calc(64px + env(safe-area-inset-bottom))',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              width: 'min(calc(100% - 2rem), calc(42rem - 2rem))',
+              zIndex: 45
+            }}
+          >
+            <div className="flex gap-2 w-full">
           {/* Hidden file inputs */}
           <input
             ref={fileInputRef}
@@ -1397,11 +1609,11 @@ export default function ChatDetailPage() {
             type="button"
             onClick={handleOpenImagePicker}
             disabled={uploading}
-            className="flex-shrink-0 rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-600 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 min-h-[44px] min-w-[44px] flex items-center justify-center"
+            className="flex-shrink-0 rounded-xl border border-gray-300 bg-[#E2F5E6] px-3 py-2.5 text-sm text-gray-600 hover:bg-white focus:outline-none focus:ring-2 focus:ring-[#E0785B] disabled:opacity-50 min-h-[44px] min-w-[44px] flex items-center justify-center"
             aria-label="Attach image"
             title="Attach image"
           >
-            {uploading ? "…" : "📷"}
+            {uploading ? "…" : <Image src="/camera.svg" alt="Camera" width={24} height={24} style={{width: "auto", height: "auto"}} />}
           </button>
           
           {/* Image picker popup */}
@@ -1420,30 +1632,30 @@ export default function ChatDetailPage() {
                   onClick={(e) => e.stopPropagation()}
                 >
                   <div className="p-4 border-b border-gray-200">
-                    <h3 className="text-lg font-semibold text-gray-900">Vælg billede</h3>
-                    <p className="text-sm text-gray-500 mt-1">Hvordan vil du tilføje et billede?</p>
+                    <h3 className="text-lg font-semibold text-gray-900" style={{ fontFamily: 'Arial, sans-serif' }}>Vælg billede</h3>
+                    <p className="text-sm text-gray-500 mt-1" style={{ fontFamily: 'Arial, sans-serif' }}>Hvordan vil du tilføje et billede?</p>
                   </div>
                   <div className="p-2">
                     <button
                       type="button"
                       onClick={handleSelectFromGallery}
-                      className="w-full flex items-center gap-3 px-4 py-3 text-left rounded-xl hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+                      className="w-full flex items-center gap-3 px-4 py-3 text-left rounded-xl hover:bg-white focus:outline-none focus:ring-2 focus:ring-[#E0785B] transition-colors"
                     >
                       <span className="text-2xl">🖼️</span>
                       <div className="flex-1">
-                        <div className="font-medium text-gray-900">Vælg fra fotoapp</div>
-                        <div className="text-sm text-gray-500">Vælg et eksisterende billede</div>
+                        <div className="font-medium text-gray-900" style={{ fontFamily: 'Arial, sans-serif' }}>Vælg fra fotoapp</div>
+                        <div className="text-sm text-gray-500" style={{ fontFamily: 'Arial, sans-serif' }}>Vælg et eksisterende billede</div>
                       </div>
                     </button>
                     <button
                       type="button"
                       onClick={handleTakePhoto}
-                      className="w-full flex items-center gap-3 px-4 py-3 text-left rounded-xl hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors mt-2"
+                      className="w-full flex items-center gap-3 px-4 py-3 text-left rounded-xl hover:bg-white focus:outline-none focus:ring-2 focus:ring-[#E0785B] transition-colors mt-2"
                     >
                       <span className="text-2xl">📷</span>
                       <div className="flex-1">
-                        <div className="font-medium text-gray-900">Tag nyt billede</div>
-                        <div className="text-sm text-gray-500">Brug kameraet til at tage et nyt billede</div>
+                        <div className="font-medium text-gray-900" style={{ fontFamily: 'Arial, sans-serif' }}>Tag nyt billede</div>
+                        <div className="text-sm text-gray-500" style={{ fontFamily: 'Arial, sans-serif' }}>Brug kameraet til at tage et nyt billede</div>
                       </div>
                     </button>
                   </div>
@@ -1451,7 +1663,8 @@ export default function ChatDetailPage() {
                     <button
                       type="button"
                       onClick={() => setShowImagePicker(false)}
-                      className="w-full px-4 py-3 text-center font-medium text-gray-700 hover:bg-gray-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
+                      className="w-full px-4 py-3 text-center font-medium text-gray-700 hover:bg-white rounded-xl focus:outline-none focus:ring-2 focus:ring-[#E0785B] transition-colors"
+                      style={{ fontFamily: 'Arial, sans-serif' }}
                     >
                       Annuller
                     </button>
@@ -1470,19 +1683,158 @@ export default function ChatDetailPage() {
             onBlur={() => setTyping(false)}
             placeholder="Skriv en besked…"
             disabled={sending}
-            className="flex-1 rounded-xl border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 min-h-[44px]"
+            className="flex-1 rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm focus:border-[#E0785B] focus:outline-none focus:ring-1 focus:ring-[#E0785B] disabled:bg-gray-100 min-h-[44px]"
             aria-label="Message input"
+            style={{ fontFamily: 'Arial, sans-serif' }}
           />
+          {/* Thumbs up button - only show when input is empty */}
+          {!content.trim() && (
+            <button
+              type="button"
+              ref={reactionButtonRef}
+              onMouseDown={handleReactionPressStart}
+              onMouseUp={handleReactionPressEnd}
+              onMouseLeave={handleReactionPressEnd}
+              onTouchStart={handleReactionPressStart}
+              onTouchEnd={handleReactionPressEnd}
+              onClick={handleReactionClick}
+              disabled={sending}
+              className="flex-shrink-0 px-3 py-2.5 text-2xl hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-[#E0785B] disabled:opacity-50 min-h-[44px] min-w-[44px] flex items-center justify-center transition-opacity bg-transparent border-none"
+              aria-label="Send reaktion"
+            >
+              {selectedReaction}
+            </button>
+          )}
           <button
             type="submit"
             disabled={sending || !content.trim()}
-            className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none min-h-[44px]"
+            className="flex-shrink-0 px-3 py-2.5 hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-[#E0785B] disabled:opacity-50 disabled:pointer-events-none min-h-[44px] min-w-[44px] flex items-center justify-center bg-transparent border-none"
             aria-label="Send besked"
           >
-            Send
+            <Image src="/send.svg" alt="Send" width={24} height={24} style={{width: "auto", height: "auto"}} />
           </button>
-        </form>
+            </div>
+          </form>
+          
+          {/* Reaction picker popup */}
+          {showReactionPicker && (
+            <>
+              <div
+                className="fixed inset-0 bg-black/20 z-40"
+                onClick={() => setShowReactionPicker(false)}
+                aria-hidden="true"
+              />
+              <div className="fixed bottom-20 left-1/2 transform -translate-x-1/2 z-50 bg-white rounded-2xl shadow-xl p-4 border border-gray-200 max-w-[90vw]">
+                <div className="grid grid-cols-5 gap-3">
+                  {reactionIcons.map((icon) => (
+                    <button
+                      key={icon}
+                      type="button"
+                      onClick={() => {
+                        setSelectedReaction(icon);
+                        handleSendReaction(icon);
+                        setShowReactionPicker(false);
+                      }}
+                      className="text-3xl hover:scale-125 transition-transform p-2 rounded-lg hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-[#E0785B]"
+                      aria-label={`Vælg ${icon}`}
+                    >
+                      {icon}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
       </div>
+
+      {/* Bottom Navigation Bar - For children */}
+      {isChild && (
+        <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 safe-area-inset-bottom" style={{ zIndex: 40 }}>
+          <div className="max-w-2xl mx-auto flex items-center justify-around px-2 py-1">
+            <Link
+              href="/chats"
+              className={`relative flex flex-col items-center justify-center px-2 py-1 min-h-[48px] min-w-[48px] rounded-lg transition-colors ${
+                isActive("/chats") ? "text-[#E0785B]" : "text-gray-400"
+              }`}
+              aria-label="Chat"
+            >
+              <Image src="/chaticon.svg" alt="" width={48} height={48} className="w-12 h-12" />
+              <UnreadBadge userId={user?.id ?? null} />
+            </Link>
+            <Link
+              href="/groups"
+              className={`flex flex-col items-center justify-center px-2 py-1 min-h-[48px] min-w-[48px] rounded-lg transition-colors ${
+                isActive("/groups") ? "text-[#E0785B]" : "text-gray-400"
+              }`}
+              aria-label="Grupper"
+            >
+              <Image src="/groupsicon.svg" alt="" width={67} height={67} className="w-[67px] h-[67px]" />
+            </Link>
+            <Link
+              href="/chats/new"
+              className={`flex flex-col items-center justify-center px-2 py-1 min-h-[48px] min-w-[48px] rounded-lg transition-colors ${
+                isActive("/chats/new") ? "text-[#E0785B]" : "text-gray-400"
+              }`}
+              aria-label="Find venner"
+            >
+              <Image src="/findfriends.svg" alt="" width={48} height={48} className="w-12 h-12" />
+            </Link>
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="flex flex-col items-center justify-center px-2 py-1 min-h-[48px] min-w-[48px] rounded-lg transition-colors text-gray-400 hover:text-[#E0785B] focus:outline-none focus:ring-2 focus:ring-[#E0785B]"
+              aria-label="Indstillinger"
+            >
+              <Image src="/logout.svg" alt="" width={48} height={48} className="w-12 h-12" />
+            </button>
+          </div>
+        </nav>
+      )}
+
+      {/* Bottom Navigation Bar - For parents */}
+      {!isChild && (
+        <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 safe-area-inset-bottom" style={{ zIndex: 40 }}>
+          <div className="max-w-2xl mx-auto flex items-center justify-around px-2 py-1">
+            <Link
+              href="/parent"
+              className={`flex flex-col items-center justify-center px-2 py-1 min-h-[48px] min-w-[48px] rounded-lg transition-colors ${
+                isActive("/parent") ? "text-[#E0785B]" : "text-gray-400"
+              }`}
+              aria-label="Chat"
+            >
+              <Image src="/chaticon.svg" alt="" width={48} height={48} className="w-12 h-12" />
+            </Link>
+            <Link
+              href="/parent/create-child"
+              className={`flex flex-col items-center justify-center px-2 py-1 min-h-[48px] min-w-[48px] rounded-lg transition-colors ${
+                isActive("/parent/create-child") ? "text-[#E0785B]" : "text-gray-400"
+              }`}
+              aria-label="Opret barn"
+            >
+              <Image src="/parentcontrol.svg" alt="" width={48} height={48} className="w-12 h-12" />
+            </Link>
+            <Link
+              href="/parent/children"
+              className={`flex flex-col items-center justify-center px-2 py-1 min-h-[48px] min-w-[48px] rounded-lg transition-colors ${
+                isActive("/parent/children") ? "text-[#E0785B]" : "text-gray-400"
+              }`}
+              aria-label="Mine børn"
+            >
+              <Image src="/children.svg" alt="" width={48} height={48} className="w-12 h-12" />
+            </Link>
+            <Link
+              href="/parent/settings"
+              className={`flex flex-col items-center justify-center px-2 py-1 min-h-[48px] min-w-[48px] rounded-lg transition-colors ${
+                isActive("/parent/settings") ? "text-[#E0785B]" : "text-gray-400"
+              }`}
+              aria-label="Indstillinger"
+            >
+              <Image src="/Settings.svg" alt="" width={48} height={48} className="w-12 h-12" />
+            </Link>
+          </div>
+        </nav>
+      )}
     </main>
   );
 }

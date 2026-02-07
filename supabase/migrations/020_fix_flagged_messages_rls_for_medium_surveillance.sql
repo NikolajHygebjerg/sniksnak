@@ -1,14 +1,14 @@
--- Migration 020: Fix RLS for flagged_messages to allow parents to see flagged messages
+-- Migration 020: Fix RLS for flagged_messages to allow parents to see anmeldte beskeder
 -- in chats where their child is a participant (either sender or receiver)
 -- This is needed for Medium surveillance level to work correctly
 
 -- Drop existing policy
 DROP POLICY IF EXISTS "Parents can view flagged messages for linked children" ON public.flagged_messages;
 
--- Create new policy that allows parents to see flagged messages in chats where their child participates
+-- Create new policy that allows parents to see anmeldte beskeder in chats where their child participates
 -- This covers both cases:
--- 1. Their child sent a flagged message (child_id = their child)
--- 2. Their child received a flagged message (message is in a chat with their child)
+-- 1. Their child sent an anmeldt besked (child_id = their child)
+-- 2. Their child received an anmeldt besked (message is in a chat with their child)
 CREATE POLICY "Parents can view flagged messages for linked children"
   ON public.flagged_messages FOR SELECT
   TO authenticated

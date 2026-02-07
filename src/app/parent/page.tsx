@@ -1,21 +1,22 @@
 "use client";
 
 /**
- * Parent dashboard: list of linked children from parent_child_links.
- * Parents see children they are linked to; clicking a child goes to that child's chat list.
- * Children cannot access this page (blocked by account type).
+ * Parent chat page: shows only parent-to-parent chats (chats between parents, not children).
  */
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState, useRef, useMemo } from "react";
+import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { supabase } from "@/lib/supabase";
 import type { User } from "@supabase/supabase-js";
+import { initializePushNotifications } from "@/lib/push-notifications";
+import UnreadBadge from "@/components/UnreadBadge";
 
-type LinkRow = {
-  id: number;
-  parent_id: string;
-  child_id: string;
-  surveillance_level?: string | null;
+type Chat = {
+  id: string;
+  user1_id: string;
+  user2_id: string;
+  created_at: string;
 };
 
 type UserRow = {
@@ -27,643 +28,246 @@ type UserRow = {
   avatar_url?: string | null;
 };
 
+function otherUserLabel(other: UserRow | undefined): string {
+  if (!other) return "Unknown";
+  if (other.first_name != null && other.surname != null && (other.first_name.trim() || other.surname.trim())) {
+    const f = other.first_name.trim() || "?";
+    const s = other.surname.trim() || "?";
+    const cap = (x: string) => x.slice(0, 1).toUpperCase() + x.slice(1).toLowerCase();
+    return `${cap(f)} ${cap(s)}`;
+  }
+  if (other.username?.trim()) return other.username.trim();
+  return other.email ?? "Unknown";
+}
+
+type MessageRow = {
+  id: string;
+  chat_id: string;
+  sender_id: string;
+  content: string | null;
+  created_at: string;
+  attachment_url?: string | null;
+  attachment_type?: string | null;
+};
+
 export default function ParentPage() {
   const router = useRouter();
+  const pathname = usePathname();
   const [user, setUser] = useState<User | null>(null);
-  const [links, setLinks] = useState<LinkRow[]>([]);
+  const [chats, setChats] = useState<Chat[]>([]);
   const [usersById, setUsersById] = useState<Record<string, UserRow>>({});
-  const [friendsByChildId, setFriendsByChildId] = useState<Record<string, UserRow[]>>({});
+  const [lastMessageByChat, setLastMessageByChat] = useState<Record<string, MessageRow>>({});
+  const [lastReadByChat, setLastReadByChat] = useState<Record<string, string>>({});
+  const [messagesFromOthers, setMessagesFromOthers] = useState<MessageRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [schemaMissing, setSchemaMissing] = useState(false);
-  const [usernameColumnMissing, setUsernameColumnMissing] = useState(false);
-  const [firstnameSurnameColumnMissing, setFirstnameSurnameColumnMissing] = useState(false);
-  // Create child form (first name + surname + PIN + photo + surveillance level)
-  const [createFirstName, setCreateFirstName] = useState("");
-  const [createSurname, setCreateSurname] = useState("");
-  const [createPin, setCreatePin] = useState("");
-  const [createSurveillanceLevel, setCreateSurveillanceLevel] = useState<"strict" | "medium" | "mild">("medium");
-  const [createPhotoFile, setCreatePhotoFile] = useState<File | null>(null);
-  const [createPhotoPreview, setCreatePhotoPreview] = useState<string | null>(null);
-  const [createSubmitting, setCreateSubmitting] = useState(false);
-  const [createMessage, setCreateMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
-  const [nameTaken, setNameTaken] = useState(false);
-  const [duplicateNameSuffix, setDuplicateNameSuffix] = useState("");
-  const [invitationLink, setInvitationLink] = useState<string | null>(null);
-  // Link existing child by email (secondary)
-  const [linkEmail, setLinkEmail] = useState("");
-  const [linkSubmitting, setLinkSubmitting] = useState(false);
-  const [linkMessage, setLinkMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
-  const [showLinkByEmail, setShowLinkByEmail] = useState(false);
-  const [refreshKey, setRefreshKey] = useState(0);
-  const [accessDenied, setAccessDenied] = useState(false);
-  const [deletingChildId, setDeletingChildId] = useState<string | null>(null);
-  const [updatingSurveillanceLevel, setUpdatingSurveillanceLevel] = useState<string | null>(null);
-  const [pendingRequests, setPendingRequests] = useState<Array<{
-    id: string;
-    child_id: string;
-    contact_user_id: string;
-    child_name: string;
-    contact_name: string;
-    chat_id?: string | null;
-  }>>([]);
-  
-  async function handleUpdateSurveillanceLevel(childId: string, newLevel: "strict" | "medium" | "mild") {
-    if (!user || updatingSurveillanceLevel) return;
-    
-    setUpdatingSurveillanceLevel(childId);
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.access_token) {
-      setUpdatingSurveillanceLevel(null);
-      return;
-    }
-    
-    try {
-      const res = await fetch("/api/parent/update-surveillance-level", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({ childId, surveillanceLevel: newLevel }),
-      });
-      
-      const data = await res.json();
-      if (!res.ok) {
-        console.error("Error updating surveillance level:", data.error, data.details);
-        // Show error to user
-        setError(`Kunne ikke opdatere overvågningsniveau: ${data.error}${data.details ? ` (${data.details})` : ""}`);
-        return;
-      }
-      
-      // Refresh the links to show updated surveillance level
-      setRefreshKey((prev) => prev + 1);
-    } catch (error) {
-      console.error("Error updating surveillance level:", error);
-    } finally {
-      setUpdatingSurveillanceLevel(null);
-    }
-  }
+  const userRef = useRef<string | null>(null);
+  const chatIdsRef = useRef<Set<string>>(new Set());
 
-  // Block children and redirect; parents go straight to dashboard
+  const isActive = (path: string) => pathname === path;
+
+  userRef.current = user?.id ?? null;
+  chatIdsRef.current = new Set(chats.map((c) => c.id));
+
+  // Initialize push notifications when user is logged in
+  // This runs silently in the background - failures don't affect the app
+  useEffect(() => {
+    if (!user?.id) return;
+    
+    // Initialize push notifications (request permission, register service worker, subscribe)
+    // Run this asynchronously without blocking or showing errors to user
+    initializePushNotifications().catch(() => {
+      // Silent fail - push notifications are optional, badge still works
+    });
+  }, [user?.id]);
+
+  // Realtime: new messages in any of our chats → update last message + unread
+  useEffect(() => {
+    if (!user?.id) return;
+    const channel = supabase
+      .channel("chats-list-messages")
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "messages",
+        },
+        (payload) => {
+          const row = payload.new as MessageRow;
+          if (!chatIdsRef.current.has(row.chat_id)) return;
+          setLastMessageByChat((prev) => ({ ...prev, [row.chat_id]: row }));
+          if (row.sender_id !== userRef.current) {
+            setMessagesFromOthers((prev) => [...prev, row]);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id]);
+
   useEffect(() => {
     let cancelled = false;
 
-    async function checkAccessAndLoad() {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (cancelled) return;
-        
-        if (!session?.user) {
-          if (!cancelled) router.replace("/login");
-          return;
-        }
-        if (!cancelled) setUser(session.user);
-        const uid = session.user.id;
+    async function load() {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) {
+        router.replace("/login");
+        return;
+      }
+      setUser(session.user);
+      const uid = session.user.id;
 
-      // Child accounts have username set; they must NOT see parent view
-      const { data: ownUser, error: ownUserError } = await supabase
-        .from("users")
-        .select("username")
-        .eq("id", uid)
-        .maybeSingle();
+      // Check if user is a parent
+      const { data: parentLinks } = await supabase
+        .from("parent_child_links")
+        .select("child_id, surveillance_level")
+        .eq("parent_id", uid);
+
+      // Get all chats where user is a direct participant
+      const result = await supabase
+        .from("chats")
+        .select("id, user1_id, user2_id, created_at")
+        .or(`user1_id.eq.${uid},user2_id.eq.${uid}`)
+        .order("created_at", { ascending: false });
 
       if (cancelled) return;
 
-      if (ownUserError) {
-        // Safe error logging
-        try {
-          if (ownUserError && typeof ownUserError === "object" && Object.keys(ownUserError).length > 0) {
-            console.error("Error loading own user:", ownUserError);
-          } else {
-            console.error("Unknown error occurred:", ownUserError);
-          }
-        } catch (logErr) {
-          console.error("Error occurred but could not be logged:", String(ownUserError || "Unknown"));
-        }
-      }
-
-      if (!cancelled && ownUser?.username != null && String(ownUser.username).trim() !== "") {
-        setAccessDenied(true);
-        setLoading(false);
-        router.replace("/chats");
-        return;
-      }
-
-      // Parent: load links and children (including surveillance_level)
-      const { data: linksData, error: linksErr } = await supabase
-        .from("parent_child_links")
-        .select("id, parent_id, child_id, surveillance_level")
-        .eq("parent_id", uid)
-        .order("id", { ascending: true });
-
-      if (linksErr) {
-        if (!cancelled) {
-          setError(linksErr.message);
-          setSchemaMissing(
-            /parent_child_links|schema cache|does not exist|relation .* does not exist/i.test(
-              linksErr.message
-            )
-          );
-        }
+      if (result.error) {
+        setError(result.error.message);
         setLoading(false);
         return;
       }
 
-      const list = (linksData ?? []) as LinkRow[];
-      if (!cancelled) setLinks(list);
+      let list = (result.data ?? []) as Chat[];
+
+      // Filter: only show parent-to-parent chats (exclude chats where either participant is a child)
+      if (parentLinks && parentLinks.length > 0) {
+        const childIds = new Set(parentLinks.map(link => link.child_id));
+        list = list.filter((c) => {
+          const user1IsChild = childIds.has(c.user1_id);
+          const user2IsChild = childIds.has(c.user2_id);
+          return !user1IsChild && !user2IsChild;
+        });
+      }
+
+      if (!cancelled) {
+        setChats(list);
+      }
 
       if (list.length === 0) {
         if (!cancelled) setLoading(false);
         return;
       }
 
-      const childIds = [...new Set(list.map((l) => l.child_id))];
-      let usersData: UserRow[] | null = null;
-      let usersErr: { message: string } | null = null;
-      const { data: usersDataWithUsername, error: usersErrWithUsername } = await supabase
-        .from("users")
-        .select("id, email, username, first_name, surname, avatar_url")
-        .in("id", childIds);
+      const chatIds = list.map((c) => c.id);
+      const otherIds = list.map((c) =>
+        c.user1_id === uid ? c.user2_id : c.user1_id
+      );
+      const uniqueIds = [...new Set(otherIds)];
 
-      if (usersErrWithUsername && /avatar_url|column.*does not exist/i.test(usersErrWithUsername.message) && !/first_name|surname/i.test(usersErrWithUsername.message)) {
-        // avatar_url column missing (migration 006 not run); load without it
-        const { data: fallbackAvatar } = await supabase
-          .from("users")
-          .select("id, email, username, first_name, surname")
-          .in("id", childIds);
-        
-        if (cancelled) return;
-        
-        if (!cancelled && fallbackAvatar) {
-          usersData = fallbackAvatar as UserRow[];
-        } else {
-          usersErr = usersErrWithUsername;
-        }
-      } else if (usersErrWithUsername && /first_name|surname|column.*does not exist/i.test(usersErrWithUsername.message)) {
-        if (!cancelled) setFirstnameSurnameColumnMissing(true);
-        setError(usersErrWithUsername.message);
-      } else if (usersErrWithUsername && /username|schema cache/i.test(usersErrWithUsername.message)) {
-        if (!cancelled) setUsernameColumnMissing(true);
-        const { data: fallback } = await supabase
-          .from("users")
-          .select("id, email")
-          .in("id", childIds);
-        
-        if (cancelled) return;
-        
-        usersData = fallback as UserRow[] | null;
-      } else if (usersErrWithUsername) {
-        usersErr = usersErrWithUsername;
-      } else {
-        usersData = usersDataWithUsername as UserRow[] | null;
-      }
+      const [usersRes, readsRes, messagesRes, othersRes] = await Promise.all([
+        supabase.from("users").select("id, email, username, first_name, surname, avatar_url").in("id", uniqueIds).then((r) => {
+          if (r.error && /username|first_name|surname|avatar_url|schema cache|column/i.test(r.error.message)) {
+            return supabase.from("users").select("id, email, username, first_name, surname").in("id", uniqueIds);
+          }
+          return r;
+        }),
+        supabase
+          .from("chat_reads")
+          .select("chat_id, last_read_at")
+          .eq("user_id", uid)
+          .in("chat_id", chatIds),
+        supabase
+          .from("messages")
+          .select("id, chat_id, sender_id, content, created_at")
+          .in("chat_id", chatIds)
+          .order("created_at", { ascending: false })
+          .limit(100),
+        supabase
+          .from("messages")
+          .select("id, chat_id, sender_id, content, created_at")
+          .in("chat_id", chatIds)
+          .neq("sender_id", uid),
+      ]);
 
-      if (!cancelled && usersData) {
+      if (cancelled) return;
+
+      if (usersRes.data) {
         const map: Record<string, UserRow> = {};
-        for (const u of usersData) {
+        for (const u of usersRes.data) {
           map[u.id] = u;
         }
-        setUsersById(map);
+        if (!cancelled) setUsersById(map);
       }
 
-      // Load friends (approved contacts) for each child
-      if (!cancelled && childIds.length > 0) {
-        try {
-          const { data: approvedRows, error: approvedError } = await supabase
-            .from("parent_approved_contacts")
-            .select("child_id, contact_user_id")
-            .in("child_id", childIds);
-          
-          if (cancelled) return;
-
-          if (approvedError) {
-            // Safe error logging
-            try {
-              if (approvedError && typeof approvedError === "object" && Object.keys(approvedError).length > 0) {
-                console.error("Error loading approved contacts:", approvedError);
-              } else {
-                console.error("Unknown error occurred:", approvedError);
-              }
-            } catch (logErr) {
-              console.error("Error occurred but could not be logged:", String(approvedError || "Unknown"));
-            }
-          }
-          
-          if (!cancelled && approvedRows) {
-            const friendIdsByChild: Record<string, string[]> = {};
-            for (const row of approvedRows as { child_id: string; contact_user_id: string }[]) {
-              if (!friendIdsByChild[row.child_id]) friendIdsByChild[row.child_id] = [];
-              friendIdsByChild[row.child_id].push(row.contact_user_id);
-            }
-            
-            const allFriendIds = [...new Set(Object.values(friendIdsByChild).flat())].filter((id): id is string => !!id && typeof id === "string");
-            if (allFriendIds.length > 0) {
-              try {
-                let friendsRes = await supabase
-                  .from("users")
-                  .select("id, email, username, first_name, surname, avatar_url")
-                  .in("id", allFriendIds);
-                
-                if (cancelled) return;
-
-                if (friendsRes.error && /avatar_url|column.*does not exist/i.test(friendsRes.error.message)) {
-                  const fallbackRes = await supabase
-                    .from("users")
-                    .select("id, email, username, first_name, surname")
-                    .in("id", allFriendIds);
-                  if (fallbackRes.data) {
-                    friendsRes = {
-                      ...fallbackRes,
-                      data: fallbackRes.data.map((u: any) => ({ ...u, avatar_url: null })),
-                    } as any as typeof friendsRes;
-                  } else {
-                    friendsRes = fallbackRes as any as typeof friendsRes;
-                  }
-                }
-                
-                if (cancelled) return;
-                
-                // Add avatar_url if missing from query result
-                if (friendsRes.data) {
-                  friendsRes = {
-                    ...friendsRes,
-                    data: friendsRes.data.map((u: any) => ({
-                      ...u,
-                      avatar_url: u.avatar_url ?? null,
-                    })),
-                  } as typeof friendsRes;
-                }
-                
-                if (!cancelled && friendsRes.data) {
-                  const friendsMap: Record<string, UserRow[]> = {};
-                  for (const childId of childIds) {
-                    const friendIds = friendIdsByChild[childId] || [];
-                    friendsMap[childId] = (friendsRes.data as UserRow[]).filter((f) => friendIds.includes(f.id));
-                  }
-                  setFriendsByChildId(friendsMap);
-                } else if (!cancelled && friendsRes.error) {
-                  // Safe error logging
-                  try {
-                    if (friendsRes.error && typeof friendsRes.error === "object" && Object.keys(friendsRes.error).length > 0) {
-                      console.error("Failed to load friends:", friendsRes.error);
-                    } else {
-                      console.error("Unknown error occurred:", friendsRes.error);
-                    }
-                  } catch (logErr) {
-                    console.error("Error occurred but could not be logged:", String(friendsRes.error || "Unknown"));
-                  }
-                }
-              } catch (err) {
-                // Safe error logging
-                try {
-                  if (err && typeof err === "object" && Object.keys(err).length > 0) {
-                    console.error("Exception loading friends:", err);
-                  } else {
-                    console.error("Unknown error occurred:", err);
-                  }
-                } catch (logErr) {
-                  console.error("Error occurred but could not be logged:", String(err || "Unknown"));
-                }
-              }
-            }
-          }
-        } catch (err) {
-          // Safe error logging for outer try block
-          try {
-            if (err && typeof err === "object" && Object.keys(err).length > 0) {
-              console.error("Exception in friends loading:", err);
-            } else {
-              console.error("Unknown error occurred:", err);
-            }
-          } catch (logErr) {
-            console.error("Error occurred but could not be logged:", String(err || "Unknown"));
-          }
+      if (readsRes.data) {
+        const byChat: Record<string, string> = {};
+        for (const r of readsRes.data) {
+          byChat[r.chat_id] = r.last_read_at;
         }
+        if (!cancelled) setLastReadByChat(byChat);
       }
 
-      // Load pending contact requests for this parent's children
-      if (!cancelled && childIds.length > 0) {
-        try {
-          const { data: pendingRows, error: pendingError } = await supabase
-            .from("pending_contact_requests")
-            .select("id, child_id, contact_user_id")
-            .in("child_id", childIds);
-          
-          if (cancelled) return;
-          
-          if (pendingError) {
-            // Safe error logging
-            try {
-              if (pendingError && typeof pendingError === "object" && Object.keys(pendingError).length > 0) {
-                console.error("Error loading pending requests:", pendingError);
-              } else {
-                console.error("Unknown error occurred:", pendingError);
-              }
-            } catch (logErr) {
-              console.error("Error occurred but could not be logged:", String(pendingError || "Unknown"));
-            }
-          } else if (!cancelled && pendingRows && pendingRows.length > 0) {
-            // Get names for children and contacts
-            const allUserIds = [...new Set([
-              ...pendingRows.map((r: { child_id: string }) => r.child_id),
-              ...pendingRows.map((r: { contact_user_id: string }) => r.contact_user_id)
-            ])];
-            
-            const { data: userNames, error: userNamesError } = await supabase
-              .from("users")
-              .select("id, first_name, surname, username, email")
-              .in("id", allUserIds);
-            
-            if (cancelled) return;
-            
-            // Load parent_invitation_chats to get chat_id for each request
-            // Query for invitations where inviting_child_id is one of our children
-            const { data: invitationChats, error: invitationChatsError } = await supabase
-              .from("parent_invitation_chats")
-              .select("chat_id, inviting_child_id, invited_child_id")
-              .in("inviting_child_id", childIds);
-            
-            if (cancelled) return;
-            
-            // Create a map from (inviting_child_id, invited_child_id) to chat_id
-            const chatIdMap: Record<string, string> = {};
-            if (!invitationChatsError && invitationChats) {
-              for (const inv of invitationChats) {
-                const key = `${inv.inviting_child_id}-${inv.invited_child_id}`;
-                chatIdMap[key] = inv.chat_id;
-              }
-            }
-            
-            if (!userNamesError && userNames) {
-              const nameMap: Record<string, string> = {};
-              for (const u of userNames) {
-                const name = (u.first_name && u.surname) 
-                  ? `${u.first_name.trim()} ${u.surname.trim()}`
-                  : (u.username?.trim() || u.email || "Unknown");
-                nameMap[u.id] = name;
-              }
-              
-              const formattedRequests = pendingRows.map((req: { id: string; child_id: string; contact_user_id: string }) => {
-                const key = `${req.child_id}-${req.contact_user_id}`;
-                return {
-                  id: req.id,
-                  child_id: req.child_id,
-                  contact_user_id: req.contact_user_id,
-                  child_name: nameMap[req.child_id] || "Unknown child",
-                  contact_name: nameMap[req.contact_user_id] || "Unknown contact",
-                  chat_id: chatIdMap[key] || null
-                };
-              });
-              
-              if (!cancelled) setPendingRequests(formattedRequests);
-            }
-          } else if (!cancelled) {
-            setPendingRequests([]);
-          }
-        } catch (err) {
-          // Safe error logging
-          try {
-            if (err && typeof err === "object" && Object.keys(err).length > 0) {
-              console.error("Exception loading pending requests:", err);
-            } else {
-              console.error("Unknown error occurred:", err);
-            }
-          } catch (logErr) {
-            console.error("Error occurred but could not be logged:", String(err || "Unknown"));
-          }
+      if (messagesRes.data) {
+        const byChat: Record<string, MessageRow> = {};
+        for (const m of messagesRes.data as MessageRow[]) {
+          if (!byChat[m.chat_id]) byChat[m.chat_id] = m;
         }
+        if (!cancelled) setLastMessageByChat(byChat);
       }
 
-      if (!cancelled && usersErr) setError(usersErr.message);
+      if (othersRes.data) {
+        if (!cancelled) setMessagesFromOthers((othersRes.data ?? []) as MessageRow[]);
+      }
+
       if (!cancelled) setLoading(false);
-    } catch (err) {
-        // Handle AbortError and other exceptions
-        if (cancelled) return;
-        
-        // Check if it's an AbortError (operation was aborted)
-        if (err instanceof Error && (err.name === "AbortError" || err.message.includes("aborted"))) {
-          console.log("Operation was aborted (component unmounted or navigation occurred)");
-          return;
-        }
-        
-        // Safe error logging for other errors
-        try {
-          if (err && typeof err === "object" && Object.keys(err).length > 0) {
-            console.error("Error in checkAccessAndLoad:", err);
-          } else {
-            console.error("Unknown error occurred:", err);
-          }
-        } catch (logErr) {
-          console.error("Error occurred but could not be logged:", String(err || "Unknown"));
-        }
-        
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Der opstod en fejl under indlæsning");
-          setLoading(false);
-        }
-      }
     }
 
-    checkAccessAndLoad();
+    load();
     return () => {
       cancelled = true;
     };
-  }, [router, refreshKey]);
+  }, [router]);
 
-  /** Create a child account (first name + surname + PIN). Child can only use the app if parent creates them. */
-  async function handleCreateChild(e: React.FormEvent, suggested?: { first_name: string; surname: string }) {
-    e.preventDefault();
-    if (!user || createSubmitting) return;
-    const first_name = (suggested?.first_name ?? createFirstName).trim();
-    const surname = (suggested?.surname ?? createSurname).trim();
-    const pin = createPin.trim();
-    if (!first_name || !surname) {
-      setCreateMessage({ type: "error", text: "Indtast både fornavn og efternavn." });
-      return;
+  function getUnreadCount(chatId: string): number {
+    const lastRead = lastReadByChat[chatId];
+    if (!lastRead) {
+      return messagesFromOthers.filter((m) => m.chat_id === chatId).length;
     }
-    if (first_name.length < 2) {
-      setCreateMessage({ type: "error", text: "Fornavn skal være mindst 2 tegn." });
-      return;
-    }
-    if (surname.length < 2) {
-      setCreateMessage({ type: "error", text: "Efternavn skal være mindst 2 tegn." });
-      return;
-    }
-    const anonymousNames = ["incognito", "anonymous", "anon", "unknown", "hidden", "secret", "nickname", "fake", "test", "demo"];
-    if (anonymousNames.includes(first_name.toLowerCase()) || anonymousNames.includes(surname.toLowerCase())) {
-      setCreateMessage({ type: "error", text: "Brug dit barns rigtige fornavn og efternavn." });
-      return;
-    }
-    if (pin.length < 4 || pin.length > 12) {
-      setCreateMessage({ type: "error", text: "PIN skal være 4–12 tegn." });
-      return;
-    }
-    if (!createPhotoFile || !createPhotoFile.type.startsWith("image/")) {
-      setCreateMessage({ type: "error", text: "Et billede af dit barn er påkrævet. Upload venligst et klart billede af dit barn af sikkerhedsmæssige årsager." });
-      return;
-    }
-    setCreateSubmitting(true);
-    setCreateMessage(null);
-    setNameTaken(false);
-    setDuplicateNameSuffix("");
-    setInvitationLink(null);
-    setError(null);
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.access_token) {
-      setCreateSubmitting(false);
-      setCreateMessage({ type: "error", text: "Session udløbet. Log venligst ind igen." });
-      return;
-    }
-    const formData = new FormData();
-    formData.set("first_name", first_name);
-    formData.set("surname", surname);
-    formData.set("pin", pin);
-    formData.set("surveillance_level", createSurveillanceLevel);
-    formData.set("photo", createPhotoFile);
-    const res = await fetch("/api/parent/create-child", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${session.access_token}` },
-      body: formData,
-    });
-    const data = await res.json().catch(() => ({}));
-    setCreateSubmitting(false);
-    if (!res.ok) {
-      if (res.status === 409 && data.code === "NAME_TAKEN") {
-        setNameTaken(true);
-        setDuplicateNameSuffix("");
-        setCreateMessage({ type: "error", text: data.error ?? "Dette navn er allerede i brug. Tilføj et bynavn, nummer eller kaldenavn i feltet nedenfor og klik Acceptér." });
-      } else {
-        const detail = data.detail ? ` (${data.detail})` : "";
-        setCreateMessage({ type: "error", text: (data.error ?? "Kunne ikke oprette børnekonto.") + detail });
+    return messagesFromOthers.filter(
+      (m) => m.chat_id === chatId && m.created_at > lastRead
+    ).length;
+  }
+
+  // Calculate total unread count across all chats
+  const totalUnreadCount = useMemo(() => {
+    return chats.reduce((total, chat) => total + getUnreadCount(chat.id), 0);
+  }, [chats, messagesFromOthers, lastReadByChat]);
+
+  // Sort chats by last message timestamp (most recent first)
+  const sortedChats = useMemo(() => {
+    return [...chats].sort((a, b) => {
+      const lastMsgA = lastMessageByChat[a.id];
+      const lastMsgB = lastMessageByChat[b.id];
+
+      if (lastMsgA && lastMsgB) {
+        return new Date(lastMsgB.created_at).getTime() - new Date(lastMsgA.created_at).getTime();
       }
-      return;
-    }
-    setCreateFirstName("");
-    setCreateSurname("");
-    setCreatePin("");
-    setCreatePhotoFile(null);
-    if (createPhotoPreview) URL.revokeObjectURL(createPhotoPreview);
-    setCreatePhotoPreview(null);
-    setNameTaken(false);
-    setDuplicateNameSuffix("");
-    if (data.invitationLink) {
-      setInvitationLink(data.invitationLink);
-      setCreateMessage({ type: "success", text: `${data.displayName ?? first_name + " " + surname} er oprettet. Del invitationslinket nedenfor med dit barn.` });
-    } else {
-      setCreateMessage({ type: "success", text: `${data.displayName ?? first_name + " " + surname} kan logge ind på Barn login med deres fulde navn og PIN.` });
-    }
-    setRefreshKey((k) => k + 1);
-  }
 
-  /** Link an existing user (by email) as a child. RLS allows insert where parent_id = me. */
-  async function handleLinkChild(e: React.FormEvent) {
-    e.preventDefault();
-    if (!user || linkSubmitting) return;
-    const email = linkEmail.trim().toLowerCase();
-    if (!email) {
-      setLinkMessage({ type: "error", text: "Indtast barnets email." });
-      return;
-    }
-    setLinkSubmitting(true);
-    setLinkMessage(null);
-    setError(null);
+      if (lastMsgA && !lastMsgB) return -1;
+      if (!lastMsgA && lastMsgB) return 1;
 
-    const { data: childUser, error: userErr } = await supabase
-      .from("users")
-      .select("id, email")
-      .ilike("email", email)
-      .maybeSingle();
-
-    if (userErr || !childUser) {
-      setLinkSubmitting(false);
-      setLinkMessage({ type: "error", text: "Ingen konto fundet med den email." });
-      return;
-    }
-
-    if (childUser.id === user.id) {
-      setLinkSubmitting(false);
-      setLinkMessage({ type: "error", text: "Du kan ikke tilknytte dig selv som barn." });
-      return;
-    }
-
-    const { data: inserted, error: insertErr } = await supabase
-      .from("parent_child_links")
-      .insert({ parent_id: user.id, child_id: childUser.id })
-      .select("id, parent_id, child_id")
-      .single();
-
-    setLinkSubmitting(false);
-    if (insertErr) {
-      if (insertErr.code === "23505") {
-        setLinkMessage({ type: "error", text: "Dette barn er allerede tilknyttet." });
-      } else {
-        setLinkMessage({ type: "error", text: insertErr.message });
-      }
-      return;
-    }
-
-    setLinkEmail("");
-    setLinkMessage({ type: "success", text: `${childUser.email} er nu tilknyttet som barn.` });
-    setLinks((prev) => [...prev, inserted as LinkRow]);
-    setUsersById((prev) => ({ ...prev, [childUser.id]: childUser as UserRow }));
-  }
-
-  /** Delete/unlink a child */
-  async function handleDeleteChild(childId: string, childName: string) {
-    if (!user) return;
-    if (!confirm(`Er du sikker på, at du vil slette kontoen for ${childName}? Dette vil fjerne din forbindelse til dette barn, men deres konto forbliver.`)) {
-      return;
-    }
-    setDeletingChildId(childId);
-    setError(null);
-
-    // Find the link to delete
-    const linkToDelete = links.find((l) => l.child_id === childId);
-    if (!linkToDelete) {
-      setDeletingChildId(null);
-      setError("Link not found");
-      return;
-    }
-
-    const { error: deleteErr } = await supabase
-      .from("parent_child_links")
-      .delete()
-      .eq("id", linkToDelete.id)
-      .eq("parent_id", user.id); // Extra safety check
-
-    setDeletingChildId(null);
-    if (deleteErr) {
-      setError(deleteErr.message);
-      return;
-    }
-
-    // Remove from local state
-    setLinks((prev) => prev.filter((l) => l.id !== linkToDelete.id));
-    setUsersById((prev) => {
-      const updated = { ...prev };
-      delete updated[childId];
-      return updated;
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     });
-    setFriendsByChildId((prev) => {
-      const updated = { ...prev };
-      delete updated[childId];
-      return updated;
-    });
-  }
-
-  // Child account: redirect in progress
-  if (accessDenied) {
-    return (
-      <main className="min-h-screen flex items-center justify-center p-6">
-        <p className="text-gray-500">Du har ikke adgang til forældrevisningen. Omdirigerer…</p>
-      </main>
-    );
-  }
+  }, [chats, lastMessageByChat]);
 
   if (loading) {
     return (
-      <main className="min-h-screen flex items-center justify-center p-6" role="status" aria-label="Loading">
+      <main className="min-h-screen flex items-center justify-center p-4 sm:p-6" role="status" aria-label="Indlæser chats">
         <p className="text-gray-500">Indlæser…</p>
       </main>
     );
@@ -672,556 +276,164 @@ export default function ParentPage() {
   if (!user) return null;
 
   return (
-    <main className="min-h-screen p-4 sm:p-6 safe-area-inset">
-      <div className="max-w-2xl mx-auto">
-        <header className="flex items-center justify-between gap-4 mb-6">
-          <h1 className="text-xl sm:text-2xl font-semibold">Forældrevisning</h1>
-          <nav className="flex items-center gap-4">
-            <Link
-              href="/chats"
-              className="text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500 rounded px-3 py-2 bg-blue-50 hover:bg-blue-100 transition-colors"
-            >
-              Chat
-            </Link>
-          </nav>
-        </header>
+    <main className="min-h-screen flex flex-col safe-area-inset bg-[#C4E6CA] pb-20" style={{ fontFamily: 'Arial, sans-serif' }}>
+      <div className="max-w-2xl mx-auto w-full flex flex-col min-h-0 px-4 py-6">
+        {/* Logo */}
+        <div className="flex-shrink-0 flex justify-center mb-4">
+          <Image src="/logo.svg" alt="Sniksnak Chat" width={156} height={156} className="w-[156px] h-[156px]" loading="eager" />
+        </div>
 
-        {error && !firstnameSurnameColumnMissing && (
-          <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-4" role="alert">
-            <p className="text-sm font-medium text-amber-800">Opsætning påkrævet</p>
-            {schemaMissing ? (
-              <>
-                <p className="mt-1 text-sm text-amber-700">
-                  Tabellen <code className="rounded bg-amber-100 px-1">parent_child_links</code>
-                  eksisterer ikke endnu. Kør Phase 6 migrationen i dit Supabase projekt.
-                </p>
-                <ol className="mt-3 list-decimal list-inside space-y-1 text-sm text-amber-800">
-                  <li>Åbn Supabase Dashboard → SQL Editor</li>
-                  <li>Indsæt og kør indholdet af <code className="rounded bg-amber-100 px-1">supabase/migrations/003_phase6_parent_controls.sql</code></li>
-                  <li>Opdater denne side</li>
-                </ol>
-                <p className="mt-2 text-xs text-amber-600">
-                  Raw error: {error}
-                </p>
-              </>
-            ) : (
-              <p className="mt-1 text-sm text-red-600">{error}</p>
-            )}
-          </div>
-        )}
-
-        {firstnameSurnameColumnMissing && (
-          <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-4" role="alert">
-            <p className="text-sm font-medium text-amber-800">Opsætning påkrævet: tilføj fornavn og efternavn</p>
-            <p className="mt-1 text-sm text-amber-700">
-              Tabellen <code className="rounded bg-amber-100 px-1">users</code> mangler kolonnerne <code className="rounded bg-amber-100 px-1">first_name</code> og <code className="rounded bg-amber-100 px-1">surname</code>. Kør migration 005 i dit Supabase projekt.
-            </p>
-            <ol className="mt-3 list-decimal list-inside space-y-1 text-sm text-amber-800">
-              <li>Åbn Supabase Dashboard → SQL Editor → Ny forespørgsel</li>
-              <li>Indsæt og kør indholdet af <code className="rounded bg-amber-100 px-1">supabase/migrations/005_child_firstname_surname.sql</code></li>
-              <li>Opdater denne side</li>
-            </ol>
-            <p className="mt-2 text-xs text-amber-600">
-              Raw error: {error}
-            </p>
-          </div>
-        )}
-
-        {usernameColumnMissing && !error && !firstnameSurnameColumnMissing && (
-          <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-4" role="alert">
-            <p className="text-sm font-medium text-amber-800">Tilføj børnenavne (username kolonne)</p>
-            <p className="mt-1 text-sm text-amber-700">
-              Kolonnen <code className="rounded bg-amber-100 px-1">username</code> mangler i <code className="rounded bg-amber-100 px-1">users</code>.
-              Kør dette i Supabase Dashboard → SQL Editor, så børnekonti bruger rigtige navne:
-            </p>
-            <ol className="mt-3 list-decimal list-inside space-y-1 text-sm text-amber-800">
-              <li>Åbn Supabase Dashboard → SQL Editor → Ny forespørgsel</li>
-              <li>Indsæt og kør indholdet af <code className="rounded bg-amber-100 px-1">supabase/migrations/004_child_username.sql</code></li>
-              <li>Opdater denne side</li>
-            </ol>
-          </div>
-        )}
-
-        <p className="text-gray-500 text-sm mb-4">
-          Tilknyttede børn. Klik på et barn for at se deres chats og beskeder (skrivebeskyttet). Når et andet barn vil forbinde, får du en chat fra deres forælder — åbn Chats for at se den og acceptér eller afvis der.
-        </p>
-
-        {/* Pending friend requests section */}
-        {pendingRequests.length > 0 && (
-          <section className="rounded-xl border border-blue-200 bg-blue-50 p-4 sm:p-6 mb-6" aria-label="Afventende venneanmodninger">
-            <h2 className="text-sm font-semibold text-gray-700 mb-3">Afventende venneanmodninger</h2>
-            <div className="space-y-2">
-              {pendingRequests.map((req) => (
-                <div key={req.id} className="flex items-center justify-between p-3 bg-white rounded-lg border border-blue-200">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-gray-700">
-                      <span className="font-medium">{req.child_name}</span> vil være venner med <span className="font-medium">{req.contact_name}</span>
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2 ml-4">
-                    {req.chat_id ? (
-                      <Link
-                        href={`/chats/${req.chat_id}`}
-                        className="text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline"
-                      >
-                        Se i Chats →
-                      </Link>
-                    ) : (
-                      <Link
-                        href="/chats"
-                        className="text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline"
-                      >
-                        Se i Chats →
-                      </Link>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {/* Primary: create a child account (first name + surname + PIN). Child can only use app if parent creates them. */}
-        <section className="rounded-xl border border-gray-200 bg-white p-4 sm:p-6 mb-6" aria-label="Opret børnekonto">
-          <h2 className="text-sm font-semibold text-gray-700 mb-2">Opret børnekonto</h2>
-          <p className="text-sm text-gray-500 mb-3">
-            Dit barn kan kun bruge appen efter du har oprettet deres konto. Brug deres <strong>rigtige fornavn og efternavn</strong>, så de ikke kan chatte anonymt.
+        {error && (
+          <p className="mb-4 text-sm text-red-600" role="alert" style={{ fontFamily: 'Arial, sans-serif' }}>
+            {error}
           </p>
-          <form onSubmit={(e) => handleCreateChild(e)} className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label htmlFor="parent-create-firstname" className="block text-sm font-medium text-gray-700 mb-1">
-                  Fornavn
-                </label>
-                <input
-                  id="parent-create-firstname"
-                  type="text"
-                  value={createFirstName}
-                  onChange={(e) => setCreateFirstName(e.target.value)}
-                  placeholder="f.eks. Alex"
-                  disabled={createSubmitting}
-                  autoComplete="given-name"
-                  minLength={2}
-                  required
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100"
-                />
-              </div>
-              <div>
-                <label htmlFor="parent-create-surname" className="block text-sm font-medium text-gray-700 mb-1">
-                  Efternavn
-                </label>
-                <input
-                  id="parent-create-surname"
-                  type="text"
-                  value={createSurname}
-                  onChange={(e) => setCreateSurname(e.target.value)}
-                  placeholder="f.eks. Jensen"
-                  disabled={createSubmitting}
-                  autoComplete="family-name"
-                  minLength={2}
-                  required
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100"
-                />
-              </div>
-            </div>
-            <p className="text-xs text-gray-500">
-              Brug dit barns rigtige fornavn og efternavn. Anonyme eller falske navne er ikke tilladt.
-            </p>
-            <div>
-              <label htmlFor="parent-create-photo" className="block text-sm font-medium text-gray-700 mb-1">
-                Billede af dit barn <span className="text-red-600">(påkrævet)</span>
-              </label>
-              <p className="text-xs text-gray-500 mb-2">
-                Dette skal være et klart billede af dit barn af sikkerhedsmæssige årsager. Det vil være synligt for andre brugere de chatter med.
-              </p>
-              <input
-                id="parent-create-photo"
-                type="file"
-                accept="image/*"
-                capture="user"
-                required
-                disabled={createSubmitting}
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file && file.type.startsWith("image/")) {
-                    if (createPhotoPreview) URL.revokeObjectURL(createPhotoPreview);
-                    setCreatePhotoFile(file);
-                    setCreatePhotoPreview(URL.createObjectURL(file));
-                    setCreateMessage(null);
-                  } else if (file) {
-                    setCreateMessage({ type: "error", text: "Vælg venligst en billedfil (f.eks. JPEG eller PNG)." });
-                  }
-                }}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100 file:mr-3 file:rounded file:border-0 file:bg-blue-50 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-blue-700"
-              />
-              {createPhotoPreview && (
-                <div className="mt-2">
-                  <img
-                    src={createPhotoPreview}
-                    alt="Forhåndsvisning af barnets foto"
-                    className="h-24 w-24 rounded-full object-cover border-2 border-gray-200"
-                  />
-                </div>
-              )}
-            </div>
-            <div>
-              <label htmlFor="parent-create-pin" className="block text-sm font-medium text-gray-700 mb-1">
-                PIN (4–12 tegn; barnet vil bruge dette til at logge ind)
-              </label>
-              <input
-                id="parent-create-pin"
-                type="password"
-                value={createPin}
-                onChange={(e) => setCreatePin(e.target.value)}
-                placeholder="••••"
-                disabled={createSubmitting}
-                minLength={4}
-                maxLength={12}
-                required
-                autoComplete="off"
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100"
-              />
-            </div>
-            {nameTaken && (
-              <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
-                <p className="text-sm font-semibold text-amber-900 mb-1">Vi kræver dit barns rigtige navn af sikkerhedsmæssige årsager</p>
-                <p className="text-sm text-amber-800 mb-3">
-                  En anden konto har allerede dette navn. Behold det rigtige fornavn og efternavn ovenfor, og tilføj et <strong>bynavn</strong>, <strong>nummer</strong> eller <strong>kaldenavn</strong> i feltet nedenfor for at gøre det unikt (f.eks. København, 2 eller AJ).
-                </p>
-                <label htmlFor="parent-duplicate-suffix" className="block text-sm font-medium text-amber-800 mb-1">
-                  Bynavn, nummer eller kaldenavn at tilføje efter efternavnet
-                </label>
-                <div className="flex flex-wrap gap-2 items-end">
-                  <input
-                    id="parent-duplicate-suffix"
-                    type="text"
-                    value={duplicateNameSuffix}
-                    onChange={(e) => {
-                      setDuplicateNameSuffix(e.target.value);
-                      setCreateMessage(null);
-                    }}
-                    placeholder="f.eks. København, 2 eller AJ"
-                    disabled={createSubmitting}
-                    className="flex-1 min-w-[160px] rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500 disabled:bg-gray-100"
-                    autoComplete="off"
-                  />
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      const suffix = duplicateNameSuffix.trim();
-                      if (!suffix) {
-                        setCreateMessage({ type: "error", text: "Indtast et bynavn, nummer eller kaldenavn i feltet ovenfor." });
-                        return;
-                      }
-                      if (!createPhotoFile) {
-                        setCreateMessage({ type: "error", text: "Et billede af dit barn er påkrævet." });
-                        return;
-                      }
-                      const surnameWithSuffix = `${createSurname.trim()} ${suffix}`;
-                      handleCreateChild(e, { first_name: createFirstName.trim(), surname: surnameWithSuffix });
-                    }}
-                    disabled={createSubmitting || !createPhotoFile}
-                    className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 disabled:opacity-50"
-                    title={!createPhotoFile ? "Upload et billede først" : undefined}
-                  >
-                    Acceptér og opret
-                  </button>
-                </div>
-              </div>
-            )}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Overvågningsniveau
-              </label>
-              <div className="space-y-2">
-                <label className="flex items-start gap-3 p-3 rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="surveillance_level"
-                    value="strict"
-                    checked={createSurveillanceLevel === "strict"}
-                    onChange={(e) => setCreateSurveillanceLevel(e.target.value as "strict")}
-                    disabled={createSubmitting}
-                    className="mt-0.5"
-                  />
-                  <div className="flex-1">
-                    <div className="font-medium text-sm text-gray-900">Streng</div>
-                    <div className="text-xs text-gray-600">Adgang til dit barns chats og billeder</div>
-                  </div>
-                </label>
-                <label className="flex items-start gap-3 p-3 rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="surveillance_level"
-                    value="medium"
-                    checked={createSurveillanceLevel === "medium"}
-                    onChange={(e) => setCreateSurveillanceLevel(e.target.value as "medium")}
-                    disabled={createSubmitting}
-                    className="mt-0.5"
-                  />
-                  <div className="flex-1">
-                    <div className="font-medium text-sm text-gray-900">Medium</div>
-                    <div className="text-xs text-gray-600">Notifikationer når eksplicit sprog bruges (og derefter adgang til chatten)</div>
-                  </div>
-                </label>
-                <label className="flex items-start gap-3 p-3 rounded-lg border border-gray-200 hover:bg-gray-50 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="surveillance_level"
-                    value="mild"
-                    checked={createSurveillanceLevel === "mild"}
-                    onChange={(e) => setCreateSurveillanceLevel(e.target.value as "mild")}
-                    disabled={createSubmitting}
-                    className="mt-0.5"
-                  />
-                  <div className="flex-1">
-                    <div className="font-medium text-sm text-gray-900">Mild</div>
-                    <div className="text-xs text-gray-600">Modtag kun beskeder når dit barn flagger en dårlig besked</div>
-                  </div>
-                </label>
-              </div>
-            </div>
-            <button
-              type="submit"
-              disabled={createSubmitting || !createPhotoFile}
-              className="w-full rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {createSubmitting ? "Opretter…" : "Opret børnekonto"}
-            </button>
-          </form>
-          {invitationLink && (
-            <div className="mt-4 rounded-lg border border-green-200 bg-green-50 p-3">
-              <p className="text-sm font-medium text-green-800 mb-2">Invitationslink til dit barn</p>
-              <p className="text-xs text-green-700 mb-2">
-                Del dette link med dit barn. De åbner det, indtaster deres PIN, og kan begynde at bruge appen.
-              </p>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  readOnly
-                  value={invitationLink}
-                  className="flex-1 rounded border border-green-300 bg-white px-2 py-1.5 text-sm text-gray-800"
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    navigator.clipboard.writeText(invitationLink);
-                    setCreateMessage({ type: "success", text: "Link kopieret til udklipsholder." });
-                  }}
-                  className="rounded-lg bg-green-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-green-700"
-                >
-                  Kopiér link
-                </button>
-              </div>
-            </div>
-          )}
-          {createMessage && (
-            <p
-              className={`mt-2 text-sm ${createMessage.type === "success" ? "text-green-600" : "text-red-600"}`}
-              role="status"
-            >
-              {createMessage.text}
-            </p>
-          )}
+        )}
 
-          <p className="mt-4 text-sm text-gray-500">
-            <button
-              type="button"
-              onClick={() => setShowLinkByEmail(!showLinkByEmail)}
-              className="text-blue-600 hover:underline"
-            >
-              {showLinkByEmail ? "Skjul" : "Tilknyt en eksisterende konto via email"}
-            </button>
-          </p>
-          {showLinkByEmail && (
-            <form onSubmit={handleLinkChild} className="mt-3 flex flex-wrap items-end gap-2 pt-3 border-t border-gray-100">
-              <label htmlFor="parent-link-email" className="sr-only">
-                Barnets email
-              </label>
-              <input
-                id="parent-link-email"
-                type="email"
-                value={linkEmail}
-                onChange={(e) => setLinkEmail(e.target.value)}
-                placeholder="barn@eksempel.dk"
-                disabled={linkSubmitting}
-                className="flex-1 min-w-[200px] rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100"
-              />
-              <button
-                type="submit"
-                disabled={linkSubmitting}
-                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50"
-              >
-                {linkSubmitting ? "Tilknytter…" : "Tilknyt via email"}
-              </button>
-            </form>
-          )}
-          {showLinkByEmail && linkMessage && (
-            <p
-              className={`mt-2 text-sm ${linkMessage.type === "success" ? "text-green-600" : "text-red-600"}`}
-              role="status"
-            >
-              {linkMessage.text}
-            </p>
-          )}
-        </section>
-
-        {links.length === 0 ? (
-          <section className="rounded-xl border border-gray-200 bg-white p-8 text-center">
-            <p className="text-gray-500 mb-2">Ingen børn endnu.</p>
-            <p className="text-sm text-gray-400">
-              Opret en børnekonto ovenfor (fornavn + efternavn + PIN). De kan derefter logge ind på Barn login siden.
+        {/* Chat boks med runde hjørner og lysgrøn baggrund */}
+        <div className="flex-1 flex flex-col min-h-0 bg-[#E2F5E6] rounded-3xl overflow-hidden">
+        {chats.length === 0 ? (
+          <section
+            className="rounded-3xl border border-gray-200 bg-[#E2F5E6] p-6 sm:p-8 text-center flex-1 flex flex-col items-center justify-center"
+            aria-label="No chats"
+            style={{ fontFamily: 'Arial, sans-serif' }}
+          >
+            <p className="text-lg font-medium text-gray-800 mb-2" style={{ fontFamily: 'Arial, sans-serif' }}>Ingen chats endnu</p>
+            <p className="text-gray-500 mb-4 max-w-sm" style={{ fontFamily: 'Arial, sans-serif' }}>
+              Dine chats med andre forældre vil vises her. Du modtager en chat, når et andet forældres barn vil forbinde med dit barn.
             </p>
           </section>
         ) : (
-          <ul className="divide-y divide-gray-200 rounded-xl border border-gray-200 bg-white" role="list">
-            {links.map((link) => {
-              const child = usersById[link.child_id];
-              const label =
-                child?.first_name && child?.surname
-                  ? `${child.first_name} ${child.surname}`
-                  : child?.username ?? child?.email ?? link.child_id;
-              const friends = friendsByChildId[link.child_id] || [];
-              const friendLabel = (f: UserRow) =>
-                f.first_name && f.surname ? `${f.first_name} ${f.surname}` : f.username ?? f.email ?? "Unknown";
-              const surveillanceLevel: "strict" | "medium" | "mild" = (link.surveillance_level as "strict" | "medium" | "mild") || "medium";
-              const canViewChats = surveillanceLevel === "strict";
-              
+          <ul
+            className="divide-y divide-gray-200 rounded-3xl border border-gray-200 bg-[#E2F5E6] flex-1 min-h-0 overflow-auto"
+            role="list"
+            aria-label="Chat list"
+            style={{ fontFamily: 'Arial, sans-serif' }}
+          >
+            {sortedChats.map((chat) => {
+              const otherId = chat.user1_id === user.id ? chat.user2_id : chat.user1_id;
+              const other = usersById[otherId];
+              const label = otherUserLabel(other);
+              const lastMsg = lastMessageByChat[chat.id];
+              const unread = getUnreadCount(chat.id);
+              const date = lastMsg
+                ? new Date(lastMsg.created_at)
+                : new Date(chat.created_at);
+              const dateStr =
+                date.toDateString() === new Date().toDateString()
+                  ? date.toLocaleTimeString([], {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })
+                  : date.toLocaleDateString();
+              const preview = lastMsg
+                ? lastMsg.content?.trim() || "Vedhæftet fil"
+                : "Ingen beskeder endnu";
+
               return (
-                <li key={link.id} role="listitem" className="px-4 py-3">
-                  <div className="flex items-center gap-3">
-                    {canViewChats ? (
-                      <Link
-                        href={`/parent/children/${link.child_id}`}
-                        className="flex items-center gap-3 min-w-0 flex-1 hover:bg-gray-50 focus:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 transition rounded-lg -mx-2 px-2"
-                        aria-label={`Se chats for ${label}`}
-                      >
-                        {child?.avatar_url ? (
-                          <img
-                            src={child.avatar_url}
-                            alt=""
-                            className="h-10 w-10 flex-shrink-0 rounded-full object-cover bg-gray-200"
-                          />
-                        ) : (
-                          <span className="h-10 w-10 flex-shrink-0 rounded-full bg-gray-200 flex items-center justify-center text-gray-500 text-sm font-medium" aria-hidden>
-                            {label.slice(0, 1).toUpperCase()}
-                          </span>
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium text-gray-900 truncate">{label}</span>
-                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                              surveillanceLevel === "strict" ? "bg-red-100 text-red-700" :
-                              surveillanceLevel === "medium" ? "bg-yellow-100 text-yellow-700" :
-                              surveillanceLevel === "mild" ? "bg-green-100 text-green-700" :
-                              "bg-gray-100 text-gray-700"
-                            }`}>
-                              {surveillanceLevel === "strict" ? "Streng" :
-                               surveillanceLevel === "medium" ? "Medium" :
-                               surveillanceLevel === "mild" ? "Mild" : "Ukendt"}
-                            </span>
-                          </div>
-                        </div>
-                        <span className="text-sm text-gray-500 flex-shrink-0 ml-auto">Se chats →</span>
-                      </Link>
-                    ) : (
-                      <div className="flex items-center gap-3 min-w-0 flex-1">
-                        {child?.avatar_url ? (
-                          <img
-                            src={child.avatar_url}
-                            alt=""
-                            className="h-10 w-10 flex-shrink-0 rounded-full object-cover bg-gray-200"
-                          />
-                        ) : (
-                          <span className="h-10 w-10 flex-shrink-0 rounded-full bg-gray-200 flex items-center justify-center text-gray-500 text-sm font-medium" aria-hidden>
-                            {label.slice(0, 1).toUpperCase()}
-                          </span>
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium text-gray-900 truncate">{label}</span>
-                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                              (surveillanceLevel as string) === "strict" ? "bg-red-100 text-red-700" :
-                              (surveillanceLevel as string) === "medium" ? "bg-yellow-100 text-yellow-700" :
-                              (surveillanceLevel as string) === "mild" ? "bg-green-100 text-green-700" :
-                              "bg-gray-100 text-gray-700"
-                            }`}>
-                              {(surveillanceLevel as string) === "strict" ? "Strict" :
-                               (surveillanceLevel as string) === "medium" ? "Medium" :
-                               (surveillanceLevel as string) === "mild" ? "Mild" : "Unknown"}
-                            </span>
-                          </div>
-                          <p className="text-xs text-gray-500 mt-0.5">
-                            {(surveillanceLevel as string) === "strict" 
-                              ? "Fuld adgang til chats og billeder"
-                              : (surveillanceLevel as string) === "medium" 
-                              ? "Adgang kun efter nøgleordsnotifikation"
-                              : (surveillanceLevel as string) === "mild"
-                              ? "Adgang kun når barnet flagger en besked"
-                              : "Ukendt overvågningsniveau"}
-                          </p>
-                        </div>
+                <li key={chat.id} role="listitem">
+                  <Link
+                    href={`/chats/${chat.id}`}
+                    className="flex items-center gap-3 sm:gap-4 px-4 py-3 sm:py-3.5 hover:bg-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-inset focus:ring-[#E0785B] transition touch-manipulation"
+                    aria-label={`Chat with ${label}${unread > 0 ? `, ${unread} unread` : ""}`}
+                  >
+                    {other?.avatar_url ? (
+                      <img
+                        src={other.avatar_url}
+                        alt={`${label}'s avatar`}
+                        className="h-10 w-10 flex-shrink-0 rounded-full object-cover bg-gray-200"
+                        onError={(e) => {
+                          const target = e.target as HTMLImageElement;
+                          target.style.display = 'none';
+                          const fallback = target.nextElementSibling as HTMLElement;
+                          if (fallback) fallback.style.display = 'flex';
+                        }}
+                      />
+                    ) : null}
+                    <span
+                      className={`h-10 w-10 flex-shrink-0 rounded-full bg-gray-200 flex items-center justify-center text-gray-500 text-sm font-medium ${other?.avatar_url ? 'hidden' : ''}`}
+                      aria-hidden="true"
+                    >
+                      {label.slice(0, 1).toUpperCase()}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-medium text-gray-900 truncate" style={{ fontFamily: 'Arial, sans-serif' }}>
+                          {label}
+                        </span>
+                        <span className="text-sm text-gray-500 flex-shrink-0" style={{ fontFamily: 'Arial, sans-serif' }}>
+                          {dateStr}
+                        </span>
                       </div>
+                      <p className="text-sm text-gray-500 truncate mt-0.5" style={{ fontFamily: 'Arial, sans-serif' }}>
+                        {preview}
+                      </p>
+                    </div>
+                    {unread > 0 && (
+                      <span
+                        className="flex-shrink-0 rounded-full bg-[#E0785B] text-white text-xs font-medium min-w-[22px] h-[22px] inline-flex items-center justify-center px-1.5"
+                        aria-label={`${unread} unread`}
+                      >
+                        {unread > 99 ? "99+" : unread}
+                      </span>
                     )}
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      <select
-                        value={surveillanceLevel}
-                        onChange={(e) => {
-                          const newLevel = e.target.value as "strict" | "medium" | "mild";
-                          handleUpdateSurveillanceLevel(link.child_id, newLevel);
-                        }}
-                        disabled={updatingSurveillanceLevel === link.child_id}
-                        className="text-xs rounded-lg border border-gray-300 bg-white px-2 py-1 text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
-                        aria-label={`Skift overvågningsniveau for ${label}`}
-                      >
-                        <option value="strict">Streng</option>
-                        <option value="medium">Medium</option>
-                        <option value="mild">Mild</option>
-                      </select>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          handleDeleteChild(link.child_id, label);
-                        }}
-                        disabled={deletingChildId === link.child_id}
-                        className="flex-shrink-0 rounded-lg border border-red-300 bg-white px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                        aria-label={`Slet konto for ${label}`}
-                        title={`Slet konto for ${label}`}
-                      >
-                        {deletingChildId === link.child_id ? "Sletter…" : "Slet konto"}
-                      </button>
-                    </div>
-                  </div>
-                  {friends.length > 0 && (
-                    <div className="mt-2 ml-[52px]">
-                      <p className="text-xs text-gray-500 mb-1.5">Venner ({friends.length}):</p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {friends.map((friend) => (
-                          <div
-                            key={friend.id}
-                            className="flex items-center gap-1.5 rounded-md border border-gray-200 bg-gray-50 px-2 py-1"
-                          >
-                            {friend.avatar_url ? (
-                              <img src={friend.avatar_url} alt="" className="h-4 w-4 rounded-full object-cover" />
-                            ) : (
-                              <span className="h-4 w-4 rounded-full bg-gray-300 flex items-center justify-center text-[10px] font-medium text-gray-600">
-                                {friendLabel(friend).slice(0, 1).toUpperCase()}
-                              </span>
-                            )}
-                            <span className="text-xs font-medium text-gray-700">{friendLabel(friend)}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+                  </Link>
                 </li>
               );
             })}
           </ul>
         )}
+        </div>
       </div>
+
+      {/* Bottom Navigation Bar for Parents */}
+      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 safe-area-inset-bottom z-50">
+        <div className="max-w-2xl mx-auto flex items-center justify-around px-2 py-1">
+          <Link
+            href="/parent"
+            className={`relative flex flex-col items-center justify-center px-2 py-1 min-h-[48px] min-w-[48px] rounded-lg transition-colors ${
+              isActive("/parent") ? "text-[#E0785B]" : "text-gray-400"
+            }`}
+            aria-label={`Chat${totalUnreadCount > 0 ? `, ${totalUnreadCount} ulæste` : ""}`}
+          >
+            <Image src="/chaticon.svg" alt="" width={48} height={48} className="w-12 h-12" />
+            {totalUnreadCount > 0 && (
+              <span
+                className="absolute top-1 right-1 flex-shrink-0 rounded-full bg-red-500 text-white text-xs font-bold min-w-[20px] h-5 inline-flex items-center justify-center px-1.5 border-2 border-white"
+                aria-label={`${totalUnreadCount} ulæste beskeder`}
+              >
+                {totalUnreadCount > 99 ? "99+" : totalUnreadCount}
+              </span>
+            )}
+          </Link>
+          <Link
+            href="/parent/create-child"
+            className={`flex flex-col items-center justify-center px-2 py-1 min-h-[48px] min-w-[48px] rounded-lg transition-colors ${
+              isActive("/parent/create-child") ? "text-[#E0785B]" : "text-gray-400"
+            }`}
+            aria-label="Opret barn"
+          >
+            <Image src="/parentcontrol.svg" alt="" width={48} height={48} className="w-12 h-12" />
+          </Link>
+          <Link
+            href="/parent/children"
+            className={`flex flex-col items-center justify-center px-2 py-1 min-h-[48px] min-w-[48px] rounded-lg transition-colors ${
+              isActive("/parent/children") ? "text-[#E0785B]" : "text-gray-400"
+            }`}
+            aria-label="Mine børn"
+          >
+            <Image src="/children.svg" alt="" width={48} height={48} className="w-12 h-12" />
+          </Link>
+          <Link
+            href="/parent/settings"
+            className={`flex flex-col items-center justify-center px-2 py-1 min-h-[48px] min-w-[48px] rounded-lg transition-colors ${
+              isActive("/parent/settings") ? "text-[#E0785B]" : "text-gray-400"
+            }`}
+            aria-label="Indstillinger"
+          >
+            <Image src="/Settings.svg" alt="" width={48} height={48} className="w-12 h-12" />
+          </Link>
+        </div>
+      </nav>
     </main>
   );
 }

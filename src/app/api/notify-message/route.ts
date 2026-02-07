@@ -37,6 +37,7 @@ export async function POST(request: NextRequest) {
   let sender_email: string;
   let content_preview: string;
   let chat_id: string | undefined;
+  let storedRecipientId: string | undefined;
 
   if (body.record && body.table === "messages") {
     const record = body.record as {
@@ -63,7 +64,7 @@ export async function POST(request: NextRequest) {
       record.sender_id === chat.user1_id ? chat.user2_id : chat.user1_id;
     const { data: senderUser } = await supabase
       .from("users")
-      .select("email")
+      .select("email, first_name, surname, username")
       .eq("id", record.sender_id)
       .single();
     const { data: recipientUser } = await supabase
@@ -81,6 +82,7 @@ export async function POST(request: NextRequest) {
     sender_email = (senderUser?.email as string) ?? "Someone";
     content_preview = (record.content as string) ?? "";
     chat_id = record.chat_id;
+    storedRecipientId = recipientId;
   } else {
     const r = body as {
       recipient_email?: string;
@@ -121,6 +123,67 @@ export async function POST(request: NextRequest) {
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+
+  // Also send push notification if VAPID keys are configured
+  const vapidPublicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+  const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY;
+  
+  if (vapidPublicKey && vapidPrivateKey && chat_id && body.record && body.table === "messages") {
+    try {
+      const record = body.record as {
+        chat_id: string;
+        sender_id: string;
+        content?: string | null;
+      };
+      
+      // Create Supabase client for push notification
+      if (!supabaseUrl || !supabaseServiceKey) {
+        console.warn('Supabase credentials not available for push notification');
+        return NextResponse.json({ ok: true });
+      }
+      const supabase = createClient(supabaseUrl, supabaseServiceKey);
+      
+      // Get sender user info for notification
+      const { data: senderUser } = await supabase
+        .from("users")
+        .select("first_name, surname, username, email")
+        .eq("id", record.sender_id)
+        .single();
+
+      const senderName = senderUser?.first_name && senderUser?.surname
+        ? `${senderUser.first_name} ${senderUser.surname}`
+        : senderUser?.username || senderUser?.email || "Nogen";
+
+      const messagePreview = (record.content || "").slice(0, 100) + ((record.content?.length || 0) > 100 ? "…" : "") || "Ny besked";
+
+      // Send push notification to recipient
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+      const pushResponse = await fetch(`${appUrl}/api/push/send`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-service-key': supabaseServiceKey || '',
+        },
+        body: JSON.stringify({
+          userId: storedRecipientId,
+          title: `Ny besked fra ${senderName}`,
+          body: messagePreview,
+          chatId: chat_id,
+          url: `/chats/${chat_id}`,
+          tag: `chat-${chat_id}`,
+        }),
+      });
+
+      if (!pushResponse.ok) {
+        const errorText = await pushResponse.text();
+        console.warn('Push notification failed:', errorText);
+      }
+    } catch (pushError) {
+      // Don't fail the request if push notification fails
+      console.warn('Error sending push notification:', pushError);
+    }
+  }
+
   return NextResponse.json({ ok: true });
 }
 

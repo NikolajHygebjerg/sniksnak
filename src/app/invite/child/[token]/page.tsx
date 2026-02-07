@@ -22,7 +22,7 @@ export default function InviteChildPage() {
   useEffect(() => {
     if (!token) {
       setLoading(false);
-      setError("Invalid link");
+      setError("Ugyldigt link");
       return;
     }
     fetch(`/api/invite/child/${encodeURIComponent(token)}`)
@@ -32,10 +32,10 @@ export default function InviteChildPage() {
           setFirstName(data.first_name);
           setEmail(data.email);
         } else {
-          setError(data.error ?? "Invalid or expired link");
+          setError(data.error ?? "Ugyldigt eller udløbet link");
         }
       })
-      .catch(() => setError("Could not load invitation"))
+      .catch(() => setError("Kunne ikke indlæse invitation"))
       .finally(() => setLoading(false));
   }, [token]);
 
@@ -50,7 +50,7 @@ export default function InviteChildPage() {
     });
     setSubmitting(false);
     if (signInErr) {
-      setError(signInErr.message === "Invalid login credentials" ? "Wrong PIN." : signInErr.message);
+      setError(signInErr.message === "Invalid login credentials" ? "Forkert PIN." : signInErr.message);
       return;
     }
     router.push("/chats");
@@ -59,21 +59,21 @@ export default function InviteChildPage() {
 
   if (loading) {
     return (
-      <main className="min-h-screen flex items-center justify-center p-6">
-        <p className="text-gray-500">Loading invitation…</p>
+      <main className="min-h-screen flex items-center justify-center p-6 bg-[#C4E6CA]">
+        <p className="text-gray-500">Indlæser invitation…</p>
       </main>
     );
   }
 
   if (error && !firstName) {
     return (
-      <main className="min-h-screen flex flex-col items-center justify-center p-6">
+      <main className="min-h-screen flex flex-col items-center justify-center p-6 bg-[#C4E6CA]">
         <p className="text-red-600 text-center mb-4">{error}</p>
         <p className="text-sm text-gray-500 text-center">
-          The link may have expired (invitations last 7 days). Ask your parent to create a new invitation from Parent view.
+          Linket kan være udløbet (invitationer varer 7 dage). Bed din forælder om at oprette en ny invitation fra Forældrevisning.
         </p>
-        <Link href="/" className="mt-6 text-sm text-blue-600 hover:underline">
-          ← Home
+        <Link href="/" className="mt-6 text-sm text-[#E0785B] hover:underline">
+          ← Hjem
         </Link>
       </main>
     );
@@ -82,13 +82,13 @@ export default function InviteChildPage() {
   return (
     <main className="min-h-screen flex flex-col items-center justify-center p-6">
       <div className="w-full max-w-sm space-y-6">
-        <h1 className="text-2xl font-semibold text-center">Chat App</h1>
+        <h1 className="text-2xl font-semibold text-center">Sniksnak Chat</h1>
         <p className="text-sm text-gray-500 text-center">
-          Your parent set up an account for you. Enter the PIN they gave you to get started.
+          Din forælder har oprettet en konto til dig. Indtast den PIN de har givet dig for at komme i gang.
         </p>
         {firstName && (
           <p className="text-center font-medium text-gray-800">
-            Welcome, {firstName}!
+            Velkommen, {firstName}!
           </p>
         )}
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -105,10 +105,10 @@ export default function InviteChildPage() {
               minLength={4}
               maxLength={12}
               autoComplete="off"
-              placeholder="Enter your PIN"
+              placeholder="Indtast din PIN"
               inputMode="numeric"
               disabled={submitting}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 rounded-md bg-[#E2F5E6] focus:outline-none focus:ring-2 focus:ring-[#E0785B]"
             />
           </div>
           {error && (
@@ -119,14 +119,14 @@ export default function InviteChildPage() {
           <button
             type="submit"
             disabled={submitting}
-            className="w-full py-2 px-4 bg-blue-600 text-white font-medium rounded-md hover:bg-blue-700 disabled:opacity-50"
+            className="w-full py-2 px-4 bg-[#E0785B] text-white font-medium rounded-md hover:bg-[#D06A4F] disabled:opacity-50"
           >
-            {submitting ? "Logging in…" : "Open app"}
+            {submitting ? "Logger ind…" : "Åbn app"}
           </button>
         </form>
         <p className="text-center">
           <Link href="/" className="text-sm text-gray-400 hover:text-gray-600">
-            ← Home
+            ← Hjem
           </Link>
         </p>
       </div>

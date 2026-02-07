@@ -84,8 +84,20 @@ export async function POST(request: NextRequest) {
     .maybeSingle();
 
   if (chatErr || !newChat) {
-    console.error("Error creating group chat:", chatErr);
-    return NextResponse.json({ error: "Failed to create group chat" }, { status: 500 });
+    console.error("Error creating group chat:", {
+      error: chatErr,
+      code: chatErr?.code,
+      message: chatErr?.message,
+      details: chatErr?.details,
+      hint: chatErr?.hint,
+      groupId,
+      userId: user.id,
+      placeholderUserId,
+    });
+    return NextResponse.json({ 
+      error: "Failed to create group chat",
+      details: chatErr?.message || "Unknown error"
+    }, { status: 500 });
   }
 
   return NextResponse.json({ ok: true, chatId: newChat.id });

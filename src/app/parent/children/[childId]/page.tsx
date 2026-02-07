@@ -5,8 +5,9 @@
  * Shows chats where the child is a participant; clicking a chat opens read-only chat detail.
  */
 import { useEffect, useState, useRef } from "react";
-import { useRouter, useParams } from "next/navigation";
+import { useRouter, useParams, usePathname } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { supabase } from "@/lib/supabase";
 import type { User } from "@supabase/supabase-js";
 
@@ -33,6 +34,7 @@ type MessageRow = {
 
 export default function ParentChildChatsPage() {
   const router = useRouter();
+  const pathname = usePathname();
   const params = useParams();
   const childId = params?.childId as string | undefined;
   const [user, setUser] = useState<User | null>(null);
@@ -43,6 +45,8 @@ export default function ParentChildChatsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const chatIdsRef = useRef<Set<string>>(new Set());
+
+  const isActive = (path: string) => pathname === path;
 
   useEffect(() => {
     if (!childId) {
@@ -64,7 +68,7 @@ export default function ParentChildChatsPage() {
       // Verify current user is a parent of this child with strict surveillance level
       const { data: linkData, error: linkErr } = await supabase
         .from("parent_child_links")
-        .select("id, surveillance_level")
+        .select("id")
         .eq("parent_id", uid)
         .eq("child_id", childId)
         .maybeSingle();
@@ -75,21 +79,7 @@ export default function ParentChildChatsPage() {
         return;
       }
 
-      // Check surveillance level - only strict level parents can access
-      const surveillanceLevel = linkData.surveillance_level as "strict" | "medium" | "mild" | null;
-      if (surveillanceLevel !== "strict") {
-        if (!cancelled) {
-          if (surveillanceLevel === "medium") {
-            setError("You have 'Medium' surveillance level. You can only access chats after receiving a keyword notification.");
-          } else if (surveillanceLevel === "mild") {
-            setError("You have 'Mild' surveillance level. You can only see chats when your child flags a message.");
-          } else {
-            setError("You don't have access to view this child's chats. Only 'Strict' surveillance level allows access.");
-          }
-        }
-        setLoading(false);
-        return;
-      }
+      // All parents can access (surveillance level check removed)
 
       let childRes = await supabase.from("users").select("id, email, username").eq("id", childId).single();
       if (childRes.error && /username|schema cache/i.test(childRes.error.message)) {
@@ -112,7 +102,59 @@ export default function ParentChildChatsPage() {
         return;
       }
 
-      const list = (chatsData ?? []) as Chat[];
+      let list = (chatsData ?? []) as Chat[];
+      
+      // Filter: only show chats with flagged messages
+      if (list.length > 0) {
+        const chatIds = list.map((c) => c.id);
+        
+        // Get all messages in these chats
+        const { data: messagesCheck, error: messagesCheckErr } = await supabase
+          .from("messages")
+          .select("id, chat_id")
+          .in("chat_id", chatIds)
+          .limit(500);
+        
+        if (messagesCheckErr) {
+          console.error("Error checking messages for flagged content:", messagesCheckErr);
+        } else if (messagesCheck && messagesCheck.length > 0) {
+          const messageIds = messagesCheck.map(m => m.id);
+          const otherChildIds = list.map((c) =>
+            c.user1_id === childId ? c.user2_id : c.user1_id
+          );
+          const allChildIds = [childId, ...otherChildIds];
+          const uniqueChildIds = [...new Set(allChildIds)];
+          
+          // Check which chats have flagged messages
+          const { data: flaggedData, error: flaggedErr } = await supabase
+            .from("flagged_messages")
+            .select("message_id, child_id")
+            .in("message_id", messageIds)
+            .in("child_id", uniqueChildIds);
+          
+          if (flaggedErr) {
+            console.error("Error checking flagged messages:", flaggedErr);
+          } else if (flaggedData && flaggedData.length > 0) {
+            // Get unique chat IDs that have flagged messages
+            const flaggedMessageIds = new Set(flaggedData.map(f => f.message_id));
+            const chatsWithFlaggedMessages = new Set(
+              messagesCheck
+                .filter(m => flaggedMessageIds.has(m.id))
+                .map(m => m.chat_id)
+            );
+            
+            // Filter list to only include chats with flagged messages
+            list = list.filter(c => chatsWithFlaggedMessages.has(c.id));
+          } else {
+            // No flagged messages - hide all chats
+            list = [];
+          }
+        } else {
+          // No messages in any chat - hide all chats
+          list = [];
+        }
+      }
+      
       if (!cancelled) setChats(list);
       chatIdsRef.current = new Set(list.map((c) => c.id));
 
@@ -193,7 +235,7 @@ export default function ParentChildChatsPage() {
 
   if (loading || !childId) {
     return (
-      <main className="min-h-screen flex items-center justify-center p-6" role="status">
+      <main className="min-h-screen flex items-center justify-center p-6 bg-[#C4E6CA]" role="status">
         <p className="text-gray-500">Loading…</p>
       </main>
     );
@@ -201,11 +243,11 @@ export default function ParentChildChatsPage() {
 
   if (!user || error) {
     return (
-      <main className="min-h-screen p-6">
+      <main className="min-h-screen p-6 bg-[#C4E6CA]">
         <div className="max-w-2xl mx-auto">
-          <p className="text-red-600" role="alert">{error ?? "Not found"}</p>
-          <Link href="/parent" className="mt-4 inline-block text-sm text-blue-600 hover:underline">
-            ← Back to children list
+          <p className="text-red-600" role="alert">{error ?? "Ikke fundet"}</p>
+          <Link href="/parent" className="mt-4 inline-block text-sm text-[#E0785B] hover:underline">
+            ← Tilbage til børneliste
           </Link>
         </div>
       </main>
@@ -213,26 +255,31 @@ export default function ParentChildChatsPage() {
   }
 
   return (
-    <main className="min-h-screen p-4 sm:p-6">
+    <main className="min-h-screen p-4 sm:p-6 bg-[#C4E6CA] pb-20">
       <div className="max-w-2xl mx-auto">
-        <header className="flex items-center justify-between gap-4 mb-6">
-          <h1 className="text-xl font-semibold truncate">
+        {/* Logo */}
+        <div className="flex-shrink-0 flex justify-center mb-4">
+          <Image src="/logo.svg" alt="Sniksnak Chat" width={156} height={156} className="w-[156px] h-[156px]" loading="eager" />
+        </div>
+
+        <header className="flex items-center justify-between gap-4 mb-4">
+          <h1 className="text-2xl font-semibold truncate" style={{ fontFamily: 'Arial, sans-serif' }}>
             Chats for {childUser?.username ?? childUser?.email ?? childId}
           </h1>
           <Link
             href="/parent"
-            className="text-sm text-blue-600 hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500 rounded"
+            className="text-sm text-[#E0785B] hover:underline focus:outline-none focus:ring-2 focus:ring-[#E0785B] rounded"
           >
-            ← Back to children list
+            ← Tilbage til børneliste
           </Link>
         </header>
 
         {chats.length === 0 ? (
-          <section className="rounded-xl border border-gray-200 bg-white p-8 text-center">
+          <section className="rounded-xl border border-gray-200 bg-[#E2F5E6] p-8 text-center">
             <p className="text-gray-500">No chats yet for this child.</p>
           </section>
         ) : (
-          <ul className="divide-y divide-gray-200 rounded-xl border border-gray-200 bg-white" role="list">
+          <ul className="divide-y divide-gray-200 rounded-xl border border-gray-200 bg-[#E2F5E6]" role="list">
             {chats.map((chat) => {
               const otherId = chat.user1_id === childId ? chat.user2_id : chat.user1_id;
               const other = usersById[otherId];
@@ -253,7 +300,7 @@ export default function ParentChildChatsPage() {
                 <li key={chat.id} role="listitem">
                   <Link
                     href={`/parent/children/${childId}/chats/${chat.id}`}
-                    className="flex items-center justify-between gap-4 px-4 py-3 hover:bg-gray-50 focus:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 transition"
+                    className="flex items-center justify-between gap-4 px-4 py-3 hover:bg-white focus:bg-white focus:outline-none focus:ring-2 focus:ring-inset focus:ring-[#E0785B] transition"
                     aria-label={`View chat with ${label}`}
                   >
                     <div className="flex-1 min-w-0">
@@ -271,6 +318,48 @@ export default function ParentChildChatsPage() {
           </ul>
         )}
       </div>
+
+      {/* Bottom Navigation Bar for Parents */}
+      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 safe-area-inset-bottom z-50">
+        <div className="max-w-2xl mx-auto flex items-center justify-around px-2 py-1">
+          <Link
+            href="/parent"
+            className={`flex flex-col items-center justify-center px-2 py-1 min-h-[48px] min-w-[48px] rounded-lg transition-colors ${
+              isActive("/parent") ? "text-[#E0785B]" : "text-gray-400"
+            }`}
+            aria-label="Chat"
+          >
+            <Image src="/chaticon.svg" alt="" width={48} height={48} className="w-12 h-12" />
+          </Link>
+          <Link
+            href="/parent/create-child"
+            className={`flex flex-col items-center justify-center px-2 py-1 min-h-[48px] min-w-[48px] rounded-lg transition-colors ${
+              isActive("/parent/create-child") ? "text-[#E0785B]" : "text-gray-400"
+            }`}
+            aria-label="Opret barn"
+          >
+            <Image src="/parentcontrol.svg" alt="" width={48} height={48} className="w-12 h-12" />
+          </Link>
+          <Link
+            href="/parent/children"
+            className={`flex flex-col items-center justify-center px-2 py-1 min-h-[48px] min-w-[48px] rounded-lg transition-colors ${
+              isActive("/parent/children") ? "text-[#E0785B]" : "text-gray-400"
+            }`}
+            aria-label="Mine børn"
+          >
+            <Image src="/children.svg" alt="" width={48} height={48} className="w-12 h-12" />
+          </Link>
+          <Link
+            href="/parent/settings"
+            className={`flex flex-col items-center justify-center px-2 py-1 min-h-[48px] min-w-[48px] rounded-lg transition-colors ${
+              isActive("/parent/settings") ? "text-[#E0785B]" : "text-gray-400"
+            }`}
+            aria-label="Indstillinger"
+          >
+            <Image src="/Settings.svg" alt="" width={48} height={48} className="w-12 h-12" />
+          </Link>
+        </div>
+      </nav>
     </main>
   );
 }
